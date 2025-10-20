@@ -150,7 +150,7 @@ They include:
 
 **Supported `loader` prefixes**
 
-* `sklearn:sklearn.datasets.load_breast_cancer`
+* `sklearn:sklearn.datasets.<dataset>`
 * `uci:<id>`
 * `url:<http(s)://...>` or plain `http(s)://...`
 * `kaggle-comp:<slug>@<filename>` (Kaggle **Competitions**; `@filename` is optional. If omitted, the loader auto-picks a good candidate — prefers `train.*` among supported formats; rules must be accepted in the Kaggle UI.)
