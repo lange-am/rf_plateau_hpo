@@ -154,7 +154,7 @@ They include:
 * `uci:<id>`
 * `url:<http(s)://...>` or plain `http(s)://...`
 * `kaggle-comp:<slug>@<filename>` (Kaggle **Competitions**; `@filename` is optional. If omitted, the loader auto-picks a good candidate — prefers `train.*` among supported formats; rules must be accepted in the Kaggle UI.)
-* `file`
+* `file` (`raw`)
 
 **Supported on-disk formats:** CSV, TXT, TSV/TAB, `.data` (CSV-like), Parquet, JSON, ARFF, XLS/XLSX.  
 
