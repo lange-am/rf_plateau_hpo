@@ -1,0 +1,239 @@
+datasets:
+  breast_cancer:
+    name: "Breast Cancer Wisconsin (Diagnostic)"
+    loader: "sklearn:sklearn.datasets.load_breast_cancer"
+    target: "target"
+    bib: |
+      @dataset{UCI_Breast_Cancer_Wisconsin_Diagnostic,
+        title   = {Breast Cancer Wisconsin (Diagnostic) Data Set},
+        author  = {Wolberg, William H. and Street, W. Nick and Mangasarian, Olvi L.},
+        howpublished = {UCI Machine Learning Repository},
+        url     = {https://archive.ics.uci.edu/dataset/17/breast+cancer+wisconsin+diagnostic},
+        note    = {Accessed: 2025-10-16}
+      }
+
+      @inproceedings{StreetWolbergMangasarian1993,
+        author    = {Street, W. Nick and Wolberg, William H. and Mangasarian, Olvi L.},
+        title     = {Nuclear feature extraction for breast tumor diagnosis},
+        booktitle = {Biomedical Image Processing and Biomedical Visualization},
+        year      = {1993},
+        organization = {SPIE}
+      }
+
+  iris:
+    name: "Iris"
+    loader: "sklearn:sklearn.datasets.load_iris"
+    target: "target"
+    ignored_columns: ""
+    bib: |
+      @misc{Iris,
+        author       = {R.A. Fisher},
+        title        = {Iris},
+        year         = {1936},
+        howpublished = {UC Irvine Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/ml/datasets/iris},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  diabetes:
+    name: "Diabetes"
+    loader: "sklearn:sklearn.datasets.load_diabetes"
+    target: "target"
+    ignored_columns: ""
+    bib: |
+      @misc{Diabetes,
+        author       = {scikit-learn},
+        title        = {Diabetes Dataset},
+        year         = {2010},
+        howpublished = {scikit-learn},
+        url          = {https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_diabetes.html},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  wine:
+    name: "Wine"
+    loader: "sklearn:sklearn.datasets.load_wine"
+    target: "target"
+    ignored_columns: ""
+    bib: |
+      @misc{Wine,
+        author       = {R.A. Fisher},
+        title        = {Wine Classification},
+        year         = {1936},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/ml/datasets/Wine},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  california_housing:
+    name: "California Housing"
+    loader: "sklearn:sklearn.datasets.fetch_california_housing"
+    target: "MedHouseVal"
+    ignored_columns: ""
+    bib: |
+      @misc{California_Housing,
+        author       = {scikit-learn},
+        title        = {California Housing Dataset},
+        year         = {2021},
+        howpublished = {scikit-learn},
+        url          = {https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_california_housing.html},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  covertype:
+    name: "Covertype"
+    loader: "sklearn:sklearn.datasets.fetch_covtype"
+    target: "Cover_Type"
+    ignored_columns: ""
+    bib: |
+      @misc{Covertype,
+        author       = {scikit-learn},
+        title        = {Covertype Dataset},
+        year         = {2021},
+        howpublished = {scikit-learn},
+        url          = {https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_covtype.html},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  abalone:
+    name: "Abalone"
+    loader: "uci:1"
+    target: "+1.5 gives the age in years" # from Description
+    bib: |
+      @dataset{UCI_Abalone,
+        title        = {Abalone},
+        author       = {Nash, W.J. and Sellers, T.L. and Talbot, S.R. and Cawthorn, A.J. and Ford, W.B.},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/dataset/1/abalone},
+        note         = {Accessed: 2025-10-17}
+      }
+
+      @techreport{Nash1994_Abalone,
+        title        = {The population biology of abalone in Tasmania. I. Blacklip abalone (Haliotis rubra) from the north coast and Islands of Bass Strait},
+        author       = {Nash, W. and Sellers, T. and Talbot, S. and Cawthorn, A. and Ford, W.},
+        institution  = {Sea Fisheries Division, Tasmania},
+        year         = {1994}
+      }
+
+  communities_and_crime:
+    name: "Communities and Crime"
+    loader: "uci:183"
+    target: "ViolentCrimesPerPop"
+    ignored_columns: "communityname, state, countyCode, communityCode, fold"
+    bib: |
+      @misc{Redmond2002,
+        author       = {Michael Redmond},
+        title        = {Communities and Crime},
+        year         = {2002},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/ml/datasets/communities+and+crime},
+        note         = {Accessed: 2025-10-17}
+      }
+
+  parkinsons_telemonitoring:
+    name: "Parkinson’s Telemonitoring"
+    loader: "uci:189"
+    target: "motor_UPDRS"
+    ignored_columns: "subject#"
+    bib: |
+      @article{Tsanas2009AccurateTO,
+        title={Accurate Telemonitoring of Parkinson's Disease Progression by Noninvasive Speech Tests},
+        author={Athanasios Tsanas and Max A. Little and Patrick E. McSharry and Lorraine O. Ramig},
+        journal={IEEE Transactions on Biomedical Engineering},
+        year={2009},
+        volume={57},
+        pages={884-893},
+        url={https://api.semanticscholar.org/CorpusID:7382779}
+      }
+
+  credit_card_default:
+    name: "Default of Credit Card Clients (Taiwan)"
+    loader: "uci:350"
+    target: "default payment next month"
+    ignored_columns: "ID"
+    bib: |
+      @article{YehLien2009_ESWA,
+        title   = {The comparisons of data mining techniques for the predictive accuracy of probability of default of credit card clients},
+        author  = {Yeh, I-Cheng and Lien, Che-hui},
+        journal = {Expert Systems with Applications},
+        volume  = {36},
+        number  = {2},
+        pages   = {2473--2480},
+        year    = {2009},
+        doi     = {10.1016/j.eswa.2007.12.020}
+      }
+
+      @dataset{UCI_Credit_Default_2009,
+        title   = {Default of Credit Card Clients Data Set},
+        author  = {I-Cheng Yeh and Che-hui Lien},
+        year    = {2009},
+        howpublished = {UCI Machine Learning Repository},
+        url     = {https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients},
+        note    = {Accessed: 2025-10-16}
+      }
+
+  titanic:
+    name: "Titanic (Kaggle competition)"
+    loader: "kaggle-comp:titanic@train.csv"
+    target: "Survived"
+    ignored_columns: "PassengerId,Name,Ticket"
+    bib: |
+      @misc{Kaggle_Titanic_Competition,
+        title        = {Titanic: Machine Learning from Disaster},
+        author       = {Kaggle},
+        year         = {2012},
+        howpublished = {Kaggle Competition},
+        url          = {https://www.kaggle.com/c/titanic},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  give_me_some_credit:
+    name: "Give Me Some Credit"
+    loader: "kaggle-comp:GiveMeSomeCredit@cs-training.csv"
+    target: "SeriousDlqin2yrs"
+    ignored_columns: "Unnamed: 0"
+    bib: |
+      @misc{Kaggle_GiveMeSomeCredit,
+        title        = {Give Me Some Credit},
+        author       = {Kaggle},
+        year         = {2011},
+        howpublished = {Kaggle Competition},
+        url          = {https://www.kaggle.com/c/GiveMeSomeCredit},
+        note         = {Accessed: 2025-10-16}
+      }
+
+  gene_expression_cancer_rna_seq:
+    name: "Gene Expression Cancer RNA-Seq"
+    loader: "raw"
+    target: "target"
+    ignored_columns: "Unnamed: 0"
+    bib: |
+      @misc{UCI_Gene_Expression_Cancer_RNA_Seq,
+        author       = {UCI Repository},
+        title        = {Gene Expression Cancer RNA-Seq},
+        year         = {2021},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/dataset/401/gene+expression+cancer+rna+seq},
+        note         = {Accessed: 2025-10-17}
+      }
+    note: |
+      "Derived locally: data.csv with labels.csv (class) into a single table ('target' column) 
+      and saved as data/raw/gene_expression_cancer_rna_seq/gene_expression_cancer_rna_seq.zip."
+
+  open_problems_multimodal_cite_cd62L:
+    name: "Open Problems - Multimodal Single-Cell Integration (CITE-seq)"
+    loader: "raw"
+    target: "CD62L"
+    bib: |
+      @misc{OpenProblems_Multimodal_CITEseq,
+        title        = {Open Problems: Multimodal Single-Cell Integration (CITE-seq)},
+        author       = {Open Problems @ NeurIPS Organizers},
+        year         = {2021},
+        howpublished = {Kaggle Competition},
+        url          = {https://www.kaggle.com/competitions/open-problems-multimodal}
+        note         = {Accessed: 2025-10-17}
+      }
+    note: |
+      "Derived locally: took train_cite_inputs.h5 (RNA features) and horizontally concatenated 
+      the CD62L column from train_cite_targets.h5 as the target; 
+      saved as data/raw/open_problems_multimodal_cite_cd62L/open_problems_multimodal_cite_cd62L.parquet."
