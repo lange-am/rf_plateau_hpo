@@ -19,6 +19,7 @@ try:
 except Exception:
     from typing_extensions import Literal  # pragma: no cover
 
+import functools
 import inspect
 import logging
 import time
@@ -27,6 +28,58 @@ import warnings
 import numpy as np
 import optuna
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+
+
+def scoped_file_logging_for_param(param_name: str = "log_file", level: int = logging.INFO):
+    """Decorator: per-call isolated logging to the `log_file` parameter, then cleanup."""
+    def _decorate(func):
+        sig = inspect.signature(func)
+
+        @functools.wraps(func)
+        def _wrapper(*args, **kwargs):
+            # Resolve arguments (supports both positional and keyword)
+            bound = sig.bind_partial(*args, **kwargs)
+            log_file = bound.arguments.get(param_name, None)
+
+            # Use the same logger name as inside the function
+            logger_name = f"{func.__module__}.{func.__name__}"
+            logger = logging.getLogger(logger_name)
+
+            # Reset previous handlers (from older calls)
+            for h in list(logger.handlers):
+                try:
+                    h.flush()
+                except Exception:
+                    pass
+                try:
+                    h.close()
+                except Exception:
+                    pass
+                logger.removeHandler(h)
+
+            # Configure for this call
+            logger.setLevel(level)
+            logger.propagate = False
+            if log_file:
+                fh = logging.FileHandler(log_file, encoding="utf-8")
+                fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+                logger.addHandler(fh)
+            else:
+                logger.addHandler(logging.NullHandler())
+
+            try:
+                return func(*args, **kwargs)
+            finally:
+                # Cleanup to avoid leaks and stale file locks
+                for h in list(logger.handlers):
+                    try:
+                        h.flush()
+                    except Exception:
+                        pass
+                    h.close()
+                    logger.removeHandler(h)
+        return _wrapper
+    return _decorate
 
 
 class RFCWithOOBProba(RandomForestClassifier):
@@ -85,6 +138,7 @@ class RFCWithOOBProba(RandomForestClassifier):
         return out
 
 
+@scoped_file_logging_for_param("log_file", level=logging.INFO)
 def tune_rf_oob(
     X: np.ndarray,
     y: np.ndarray,
@@ -150,17 +204,6 @@ def tune_rf_oob(
     # --- logging setup (INFO) ---
     func_name = inspect.currentframe().f_code.co_name  # type: ignore
     logger = logging.getLogger(f"{__name__}.{func_name}")
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    if log_file is not None and not any(
-        isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == log_file
-        for h in logger.handlers
-    ):
-        fh = logging.FileHandler(log_file)
-        fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
-        logger.addHandler(fh)
-    elif not logger.handlers:
-        logger.addHandler(logging.NullHandler())
 
     assert callable(score_func), "score_func must be (y, y_pred_like) -> float"
 
@@ -170,7 +213,7 @@ def tune_rf_oob(
         tagged = f"{msg} [t+{elapsed:.3f}s]" if step is None else f"[step {step}] {msg} [t+{elapsed:.3f}s]"
         if verbose >= v_gate:
             print(tagged)
-            logger.info(tagged)
+        logger.info(tagged)
 
     if sampler is None:
         sampler = optuna.samplers.TPESampler(seed=random_state)
@@ -270,6 +313,7 @@ def tune_rf_oob(
     return final_model, study
 
 
+@scoped_file_logging_for_param("log_file", level=logging.INFO)
 def tune_rf_oob_plateau(
     X: np.ndarray,
     y: np.ndarray,
@@ -420,17 +464,6 @@ def tune_rf_oob_plateau(
     # --- logging setup (INFO) ---
     func_name = inspect.currentframe().f_code.co_name
     logger = logging.getLogger(f"{__name__}.{func_name}")
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    if log_file is not None and not any(
-        isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == log_file
-        for h in logger.handlers
-    ):
-        fh = logging.FileHandler(log_file)
-        fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
-        logger.addHandler(fh)
-    elif not logger.handlers:
-        logger.addHandler(logging.NullHandler())
 
     # --- checks ---
     assert callable(score_func), "score_func must be (y, y_pred_like) -> float"
@@ -444,7 +477,7 @@ def tune_rf_oob_plateau(
         tagged = f"{msg} [t+{elapsed:.3f}s]" if step is None else f"[step {step}] {msg} [t+{elapsed:.3f}s]"
         if verbose >= v_gate:
             print(tagged)
-            logger.info(tagged)
+        logger.info(tagged)
 
     if sampler is None:
         sampler = optuna.samplers.TPESampler(seed=random_state)
