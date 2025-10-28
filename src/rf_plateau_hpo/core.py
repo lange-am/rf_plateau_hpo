@@ -153,6 +153,7 @@ def tune_rf_oob(
     min_samples_leaf_range: Tuple[int, int] = (1, 20),
     min_samples_split_range: Tuple[int, int] = (2, 40),
     tune_criterion: bool = True,
+    criterion: Optional[str] = None,
     # --- Optuna / runtime ---
     sampler: Optional[optuna.samplers.BaseSampler] = None,
     n_trials: int = 40,
@@ -179,20 +180,43 @@ def tune_rf_oob(
         Task type: classification or regression.
     score_func : callable
         OOB scoring function with signature ``score_func(y, y_pred_like) -> float``.
-
-        - Classification: ``y_pred_like`` is the forest’s ``oob_decision_function_``
-          (array of shape (n_samples, n_classes) with class probabilities).
-          Example (binary ROC AUC): ``score_func=lambda y, proba: roc_auc_score(y, proba[:, 1])``.
-          Use ``greater_is_better=True``.
-
-        - Regression: ``y_pred_like`` is the forest’s ``oob_prediction_``
-          (array of shape (n_samples,) or (n_samples, n_outputs)).
-          Example (MSE): ``score_func=mean_squared_error``.
-          Use ``greater_is_better=False``.
-
-        The function must be deterministic and side-effect free.
     greater_is_better : bool
         Direction of optimization for the study.
+
+    max_features_grid : sequence, default=("sqrt", 0.25, 1/3, 0.5, 0.7, 1.0)
+        The set of values to sample for the `max_features` parameter of RandomForest.
+    max_depth_range : tuple of int, default=(4, 40)
+        The range of values to sample for the `max_depth` parameter of RandomForest.
+    n_estimators_range : tuple of int, default=(50, 2000)
+        The range of values to sample for the `n_estimators` parameter of RandomForest.
+        Controls the number of trees in the forest. A higher number may increase performance but also training time.
+    min_samples_leaf_range : tuple of int, default=(1, 20)
+        The range of values to sample for the `min_samples_leaf` parameter of RandomForest.
+    min_samples_split_range : tuple of int, default=(2, 40)
+        The range of values to sample for the `min_samples_split` parameter of RandomForest.
+    tune_criterion : bool, default=True
+        If True, samples `criterion` from ['gini','entropy','log_loss'] (classification)
+        or ['squared_error','absolute_error'] (regression).
+    criterion : str, optional
+        The criterion used for splitting (e.g., "gini" or "entropy" for classification).
+        Must be `None` if `tune_criterion=True`. When `tune_criterion=False`, if `criterion`
+        is None, the default criterion for the model (e.g., "gini" or "squared_error") will be used.
+
+    sampler : optuna.samplers.BaseSampler, optional
+        The sampler used for Optuna trials.
+    n_trials : int, default=40
+        The number of trials (experiments) to run for hyperparameter tuning.
+    n_jobs : int, default=-1
+        The number of jobs to run in parallel. Default is -1 (use all available cores).
+    random_state : int, optional
+        Random seed for reproducibility of results.
+    verbose : int, default=0
+        Verbosity level for logging. 0 for silent, 1 for per-trial logging, 2 for per-step logging.
+
+    log_file : str, optional
+        Path to the log file where the trial logs will be saved.
+    refit : bool, default=True
+        Whether to refit the best model after tuning.
 
     Returns
     -------
@@ -201,6 +225,7 @@ def tune_rf_oob(
     study : optuna.Study
         The Optuna study with all trials.
     """
+
     # --- logging setup (INFO) ---
     func_name = inspect.currentframe().f_code.co_name  # type: ignore
     logger = logging.getLogger(f"{__name__}.{func_name}")
@@ -238,13 +263,20 @@ def tune_rf_oob(
             min_samples_leaf=trial.suggest_int("min_samples_leaf", *min_samples_leaf_range),
             min_samples_split=trial.suggest_int("min_samples_split", *min_samples_split_range),
         )
-        if tune_criterion:
-            params["criterion"] = trial.suggest_categorical(
-                "criterion",
-                ["gini", "entropy", "log_loss"] if problem == "clf" else ["squared_error", "absolute_error"],
-            )
-        _print(f"[trial {trial.number}] params={params}", v_gate=1)
 
+        if tune_criterion:
+            if criterion is None:
+                params["criterion"] = trial.suggest_categorical(
+                    "criterion",
+                    ["gini", "entropy", "log_loss"] if problem == "clf" else ["squared_error", "absolute_error"],
+                )
+            else:
+                raise ValueError("The criterion must be None when tune_criterion is True.")
+        elif criterion is not None:
+                params["criterion"] = criterion
+        # Else default RF criterion is used
+
+        _print(f"[trial {trial.number}] params={params}", v_gate=1)
 
         if problem == 'clf':
             model = RFCWithOOBProba(
@@ -327,11 +359,12 @@ def tune_rf_oob_plateau(
     min_samples_leaf_range: Tuple[int, int] = (1, 20),
     min_samples_split_range: Tuple[int, int] = (2, 40),
     tune_criterion: bool = True,
+    criterion: Optional[str] = None,
 
     # --- n_estimators triplet mechanics ---
     n_estimators_start: int = 100,
     scale_factor: float = 1.5,
-    delta: float = 2e-3,
+    delta: float = 1e-3,
     max_trees: int = 5000,
 
     # --- Optuna / runtime ---
@@ -412,6 +445,10 @@ def tune_rf_oob_plateau(
     tune_criterion : bool, default=True
         If True, samples `criterion` from ['gini','entropy','log_loss'] (classification)
         or ['squared_error','absolute_error'] (regression).
+    criterion : str, optional
+        The criterion used for splitting (e.g., "gini" or "entropy" for classification).
+        Must be `None` if `tune_criterion=True`. When `tune_criterion=False`, if `criterion`
+        is None, the default criterion for the model (e.g., "gini" or "squared_error") will be used.
 
     n_estimators_start : int, default=100
         Baseline initializer for the first triplet ([L, B, R] is built around this baseline).
@@ -548,10 +585,16 @@ def tune_rf_oob_plateau(
         )
 
         if tune_criterion:
-            params["criterion"] = trial.suggest_categorical(
-                "criterion",
-                ["gini", "entropy", "log_loss"] if problem == "clf" else ["squared_error", "absolute_error"],
-            )
+            if criterion is None:
+                params["criterion"] = trial.suggest_categorical(
+                    "criterion",
+                    ["gini", "entropy", "log_loss"] if problem == "clf" else ["squared_error", "absolute_error"],
+                )
+            else:
+                raise ValueError("The criterion must be None when tune_criterion is True.")
+        elif criterion is not None:
+                params["criterion"] = criterion
+        # Else default RF criterion is used
 
         _print(f"[trial {trial.number}] params={params} | triplet={triplet}", v_gate=1)
 
