@@ -13,7 +13,7 @@ Two tuners for Random Forest:
 Both functions share consistent logging/verbosity and return signatures.
 They are compatible with Python 3.8+ (no PEP 585 typing).
 """
-from typing import Callable, Optional, Sequence, Tuple, List
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 try:
     from typing import Literal  # Python 3.8+
 except Exception:
@@ -153,7 +153,9 @@ def tune_rf_oob(
     min_samples_leaf_range: Tuple[int, int] = (1, 20),
     min_samples_split_range: Tuple[int, int] = (2, 40),
     tune_criterion: bool = True,
+    # --- Pass to Random Forest class ---
     criterion: Optional[str] = None,
+    class_weight: Optional[Union[str, Dict[str, float], List[Dict[str, float]]]] = None,
     # --- Optuna / runtime ---
     sampler: Optional[optuna.samplers.BaseSampler] = None,
     n_trials: int = 40,
@@ -197,10 +199,16 @@ def tune_rf_oob(
     tune_criterion : bool, default=True
         If True, samples `criterion` from ['gini','entropy','log_loss'] (classification)
         or ['squared_error','absolute_error'] (regression).
+
     criterion : str, optional
         The criterion used for splitting (e.g., "gini" or "entropy" for classification).
         Must be `None` if `tune_criterion=True`. When `tune_criterion=False`, if `criterion`
         is None, the default criterion for the model (e.g., "gini" or "squared_error") will be used.
+    class_weight : {'balanced', 'balanced_subsample'}, dict or list of dicts, optional
+        Weights associated with classes in the form of a dictionary.
+        - 'balanced' adjusts weights inversely proportional to class frequencies.
+        - 'balanced_subsample' adjusts weights inversely proportional to class frequencies in each bootstrap sample.
+        - A dictionary or a list of dictionaries can also be used to specify weights for each class explicitly.
 
     sampler : optuna.samplers.BaseSampler, optional
         The sampler used for Optuna trials.
@@ -249,10 +257,22 @@ def tune_rf_oob(
         pruner=optuna.pruners.MedianPruner(n_warmup_steps=0),
     )
 
-    _print(
-        f"Start tuning | problem={problem} | greater_is_better={greater_is_better}",
-        v_gate=1,
-    )
+    log_message = (
+        f"Start tuning | problem={problem} | greater_is_better={greater_is_better} | "
+     )
+    log_message += f"max_features_grid={max_features_grid} | "
+    log_message += f"max_depth_range={max_depth_range} | "
+    log_message += f"n_estimators_range={n_estimators_range} | "
+    log_message += f"min_samples_leaf_range={min_samples_leaf_range} | "
+    log_message += f"min_samples_split_range={min_samples_split_range} | "
+    log_message += f"tune_criterion={tune_criterion} "
+    if criterion is not None:
+        log_message += f"| criterion={criterion} "
+    if class_weight is not None:
+        log_message += f"| class_weight={class_weight} "
+    if random_state is not None:
+        log_message += f"| random_state={random_state} "
+    _print(log_message, v_gate=1)
 
     def objective(trial: optuna.Trial) -> float:
         # Sample RF hyperparams (incl. n_estimators)
@@ -276,6 +296,9 @@ def tune_rf_oob(
                 params["criterion"] = criterion
         # Else default RF criterion is used
 
+        if problem == 'reg' and class_weight is not None:
+            raise ValueError("class_weight cannot be used for regression problems.")
+
         _print(f"[trial {trial.number}] params={params}", v_gate=1)
 
         if problem == 'clf':
@@ -284,6 +307,7 @@ def tune_rf_oob(
                 oob_score=True,
                 n_jobs=n_jobs,
                 random_state=random_state,
+                class_weight=class_weight,
                 **params,
             )
             model.oob_score_func = score_func
@@ -326,6 +350,11 @@ def tune_rf_oob(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study.optimize(objective, n_trials=n_trials)
 
+    completed_trials = [t.state == optuna.trial.TrialState.COMPLETE and t.value is not None for t in study.trials]
+    if len(completed_trials) == 0:
+        _print(f"No completed trials.", v_gate=1)
+        return None, study
+
     best_trial = study.best_trial
     _print(f"BEST trial={best_trial.number} | score={best_trial.value:.6f}", v_gate=1)
     _print(f"BEST params={best_trial.params}", v_gate=1)
@@ -359,7 +388,10 @@ def tune_rf_oob_plateau(
     min_samples_leaf_range: Tuple[int, int] = (1, 20),
     min_samples_split_range: Tuple[int, int] = (2, 40),
     tune_criterion: bool = True,
+
+    # --- Pass to Random Forest class ---
     criterion: Optional[str] = None,
+    class_weight: Optional[Union[str, Dict[str, float], List[Dict[str, float]]]] = None,
 
     # --- n_estimators triplet mechanics ---
     n_estimators_start: int = 100,
@@ -445,10 +477,16 @@ def tune_rf_oob_plateau(
     tune_criterion : bool, default=True
         If True, samples `criterion` from ['gini','entropy','log_loss'] (classification)
         or ['squared_error','absolute_error'] (regression).
+
     criterion : str, optional
         The criterion used for splitting (e.g., "gini" or "entropy" for classification).
         Must be `None` if `tune_criterion=True`. When `tune_criterion=False`, if `criterion`
         is None, the default criterion for the model (e.g., "gini" or "squared_error") will be used.
+    class_weight : {'balanced', 'balanced_subsample'}, dict or list of dicts, optional
+        Weights associated with classes in the form of a dictionary.
+        - 'balanced' adjusts weights inversely proportional to class frequencies.
+        - 'balanced_subsample' adjusts weights inversely proportional to class frequencies in each bootstrap sample.
+        - A dictionary or a list of dictionaries can also be used to specify weights for each class explicitly.
 
     n_estimators_start : int, default=100
         Baseline initializer for the first triplet ([L, B, R] is built around this baseline).
@@ -566,11 +604,22 @@ def tune_rf_oob_plateau(
 
     triplet = _make_triplet_from_baseline(n_estimators_start)
 
-    _print(
+    log_message = (
         f"Start tuning | problem={problem} | greater_is_better={greater_is_better} | "
-        f"delta={delta:.3g} | scale_factor={scale_factor:.3g} | triplet0={triplet}",
-        v_gate=1,
+        f"delta={delta:.3g} | scale_factor={scale_factor:.3g} | triplet0={triplet} | "
     )
+    log_message += f"max_features_grid={max_features_grid} | "
+    log_message += f"max_depth_range={max_depth_range} | "
+    log_message += f"min_samples_leaf_range={min_samples_leaf_range} | "
+    log_message += f"min_samples_split_range={min_samples_split_range} | "
+    log_message += f"tune_criterion={tune_criterion} "
+    if criterion is not None:
+        log_message += f"| criterion={criterion} "
+    if class_weight is not None:
+        log_message += f"| class_weight={class_weight} "
+    if random_state is not None:
+        log_message += f"| random_state={random_state} "
+    _print(log_message, v_gate=1)
 
     def objective(trial: optuna.Trial) -> float:
         nonlocal triplet
@@ -596,6 +645,9 @@ def tune_rf_oob_plateau(
                 params["criterion"] = criterion
         # Else default RF criterion is used
 
+        if problem == 'reg' and class_weight is not None:
+            raise ValueError("class_weight cannot be used for regression problems.")
+
         _print(f"[trial {trial.number}] params={params} | triplet={triplet}", v_gate=1)
 
         if problem == 'clf':
@@ -606,6 +658,7 @@ def tune_rf_oob_plateau(
                 oob_score=True,
                 n_jobs=n_jobs,
                 random_state=random_state,
+                class_weight=class_weight,
                 **params,
             )
             model.oob_score_func = score_func
@@ -716,7 +769,7 @@ def tune_rf_oob_plateau(
         """
 
         # trial is not COMPLETE
-        if trial.state.name != "COMPLETE":
+        if trial.state != optuna.trial.TrialState.COMPLETE:
             return False
 
         # missing attribute
@@ -740,6 +793,11 @@ def tune_rf_oob_plateau(
         scores = trial.user_attrs['scores']
         score_str = [None if s is None else f"{float(s):.6f}" for s in scores]
         _print(f"BEST scores={score_str}", v_gate)
+
+    completed_trials = [t.state == optuna.trial.TrialState.COMPLETE and t.value is not None for t in study.trials]
+    if len(completed_trials) == 0:
+        _print(f"No completed trials.", v_gate=1)
+        return None, None, study, False
 
     best_trial = study.best_trial
     if _is_plateau_trial(best_trial):
