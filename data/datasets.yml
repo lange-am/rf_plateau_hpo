@@ -115,20 +115,20 @@ datasets:
         year         = {1994}
       }
 
-  communities_and_crime:
-    name: "Communities and Crime"
-    loader: "uci:183"
-    target: "ViolentCrimesPerPop"
-    ignored_columns: "communityname, state, countyCode, communityCode, fold"
-    bib: |
-      @misc{Redmond2002,
-        author       = {Michael Redmond},
-        title        = {Communities and Crime},
-        year         = {2002},
-        howpublished = {UCI Machine Learning Repository},
-        url          = {https://archive.ics.uci.edu/ml/datasets/communities+and+crime},
-        note         = {Accessed: 2025-10-17}
-      }
+  # communities_and_crime:
+  #   name: "Communities and Crime"
+  #   loader: "uci:183"
+  #   target: "ViolentCrimesPerPop"
+  #   ignored_columns: "communityname, state, countyCode, communityCode, fold"
+  #   bib: |
+  #     @misc{Redmond2002,
+  #       author       = {Michael Redmond},
+  #       title        = {Communities and Crime},
+  #       year         = {2002},
+  #       howpublished = {UCI Machine Learning Repository},
+  #       url          = {https://archive.ics.uci.edu/ml/datasets/communities+and+crime},
+  #       note         = {Accessed: 2025-10-17}
+  #     }
 
   parkinsons_telemonitoring:
     name: "Parkinson’s Telemonitoring"
