@@ -422,6 +422,85 @@ def analyze_experiment_results(
     return results
 
 
+def bootstrap_effect_size_alternative(
+    sample1: np.ndarray, 
+    sample2: np.ndarray, 
+    n_bootstrap: int = 10000, 
+    alternative: Literal['two-sided', 'less', 'greater'] = 'two-sided'
+) -> Tuple[str, float, float, float]:
+    """
+    Alternative version using Cliff's Delta for non-normal data.
+    """
+    if len(sample1) == 0 or len(sample2) == 0:
+        raise ValueError("Input samples cannot be empty")
+
+    # Normality check to choose effect size measure
+    _, p_norm1 = stats.shapiro(sample1)
+    _, p_norm2 = stats.shapiro(sample2)
+    is_normal = p_norm1 > 0.05 and p_norm2 > 0.05
+
+    n1, n2 = len(sample1), len(sample2)
+    if is_normal:
+        test_stat, test_p = stats.ttest_ind(
+            sample1, sample2, equal_var=False, alternative=alternative
+        )
+        test_name = "t-test"
+    else:
+        test_stat, test_p = stats.mannwhitneyu(
+            sample1, sample2, alternative=alternative
+        )
+        test_name = "MW"   
+
+    def calculate_cohens_d(bs1, bs2):
+        mean_diff = np.mean(bs1) - np.mean(bs2)
+        var1 = np.var(bs1, ddof=1)
+        var2 = np.var(bs2, ddof=1)
+        n1_bs, n2_bs = len(bs1), len(bs2) 
+        pooled_var = ((n1_bs - 1) * var1 + (n2_bs - 1) * var2) / (n1_bs + n2_bs - 2)
+        pooled_std = np.sqrt(pooled_var) if pooled_var > 0 else 1e-10
+
+        return mean_diff / pooled_std
+
+    def calculate_cliffs_delta(bs1, bs2):
+        """Calculate Cliff's Delta for non-parametric effect size"""
+        n1_bs, n2_bs = len(bs1), len(bs2)
+        
+        # Count comparisons
+        greater = np.sum(bs1[:, None] > bs2[None, :])
+        less = np.sum(bs1[:, None] < bs2[None, :])
+        
+        return (greater - less) / (n1_bs * n2_bs)
+
+    # Choose effect size calculator
+    effect_calculator = calculate_cohens_d if is_normal else calculate_cliffs_delta
+
+    # Generate bootstrap distribution
+    effects = []
+    for _ in range(n_bootstrap):
+        bs1 = np.random.choice(sample1, size=n1, replace=True)
+        bs2 = np.random.choice(sample2, size=n2, replace=True)
+        effects.append(effect_calculator(bs1, bs2))
+    
+    effects = np.array(effects)
+    
+    # Calculate effect p-value from bootstrap distribution
+    # i.e. the probability of zero effect 
+    cdf_at_0 = np.mean(effects <= 0)
+    
+    if alternative == 'two-sided':
+        effect_p_value = 2 * min(cdf_at_0, 1 - cdf_at_0)
+    elif alternative == 'less':
+        effect_p_value = 1 - cdf_at_0
+    elif alternative == 'greater':
+        effect_p_value = cdf_at_0
+    else:
+        raise ValueError("Alternative must be 'two-sided', 'less', or 'greater'")
+    
+    effect_mean = np.mean(effects)
+    
+    return test_name, test_p, effect_mean, effect_p_value
+
+
 def compare_experiment_groups(dataset_folder: str, delta_dir: str="delta=2e-3", save_plots: bool=True):
  
     def check(path1: str, path2: str, param: str, alternative: str, save_plots: bool=True) -> float:
@@ -445,77 +524,119 @@ def compare_experiment_groups(dataset_folder: str, delta_dir: str="delta=2e-3", 
                 elif alt=='less':
                     alt='greater'
 
-        return stats.mannwhitneyu(exp_res1[param], exp_res2[param], alternative=alt)[1]
+        test_name, test_p, effect_mean, effect_p_value = bootstrap_effect_size_alternative(
+            exp_res1[param],
+            exp_res2[param],
+            alternative=alt
+        )
+
+        # Prepare output string
+        d_name = r"\delta" if "MW" in test_name else "d"
+        effect_threshold = 0.5 if d_name == "d" else 0.28  # Cohen's d threshold: 0.5, Cliff's delta threshold: 0.28
+
+        # Format p-value
+        test_p_str = f"{test_p:.1e}"
+        if 'e-' in test_p_str:
+            base, exp = test_p_str.split('e-')
+            test_p_str = f"{base}e-{exp.lstrip('0')}"
+
+        # Format effect size
+        effect_mean_str = f"{effect_mean:.2f}"
+
+        # Apply bold formatting based on significance and effect size
+        if test_p < 0.05:
+            test_p_str = r"$\mathbf{" + test_p_str + "}$"
+        else:
+            test_p_str = "$" + test_p_str + "$"
+
+        if abs(effect_mean) >= effect_threshold:
+            effect_str = f"${d_name}=\\mathbf{{{effect_mean_str}}}$"
+        else:
+            effect_str = f"${d_name}={effect_mean_str}$"
+
+        return f"{test_p_str},\\\\ {effect_str}"
 
     results = []  # Store comparison results
+
+    TUNE = "tune criterion"
+    DEPTH = "only depth"
+    ALG = "algorithm"
+    NTRIALS = f"$n_{{trials}}$"
+
+    SIGNIFICANCE = "t-test $p_{value}$, Cohen's $d$ (or Mann-Whintey $p_{value}$, Cliff's $\delta$)"
+    BASE = "BASE"
+    PLAT = "PLAT"
+
+    def yn(x: bool)-> str:
+        return "YES" if x else "NO"
 
     for tune_criterion in [False, True]:
         for depth_trees_only in [True, False]:
             for group_1, group_2 in [(120, 40)]:
                 path1 = Path(dataset_folder) / f'tune_criterion={tune_criterion}' / f'depth_trees_only={depth_trees_only}' / 'tune_rf_oob' / f'n_trials={group_1}'
                 path2 = Path(dataset_folder) / f'tune_criterion={tune_criterion}' / f'depth_trees_only={depth_trees_only}' / 'tune_rf_oob' / f'n_trials={group_2}'
-                p_value = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
-                results.append({'tune_criterion': tune_criterion, 'depth_trees_only': depth_trees_only, 'function': 'tune_rf_oob', 
-                    'n_trials': f"Score({group_1}) (better ?)\nScore({group_2})", 'p_value': p_value})
+                significance = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
+                results.append({TUNE: yn(tune_criterion), DEPTH: yn(depth_trees_only), 'algorithm': BASE, 
+                    NTRIALS: f"Score: {group_1} vs {group_2}", SIGNIFICANCE: significance})
 
     for tune_criterion in [False, True]:
         for depth_trees_only in [True, False]:
             for group_1, group_2 in [(120, 40)]:
                 path1 = Path(dataset_folder) / f'tune_criterion={tune_criterion}' / f'depth_trees_only={depth_trees_only}' / 'tune_rf_oob_plateau' / f'{delta_dir}' / f'n_trials={group_1}'
                 path2 = Path(dataset_folder) / f'tune_criterion={tune_criterion}' / f'depth_trees_only={depth_trees_only}' / 'tune_rf_oob_plateau' / f'{delta_dir}' / f'n_trials={group_2}'
-                p_value = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
-                results.append({'tune_criterion': tune_criterion, 'depth_trees_only': depth_trees_only, 'function': 'tune_rf_oob_plateau', 
-                    'n_trials': f"Score({group_1}) (better ?)\nScore({group_2})", 'p_value': p_value})
+                significance = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
+                results.append({TUNE: yn(tune_criterion), DEPTH: yn(depth_trees_only), 'algorithm': PLAT, 
+                    NTRIALS: f"Score: {group_1} vs {group_2}", SIGNIFICANCE: significance})
 
     for tune_criterion in [False, True]:
         for depth_trees_only in [True, False]:
             path1 = Path(dataset_folder) / f'tune_criterion={tune_criterion}' / f'depth_trees_only={depth_trees_only}' / 'tune_rf_oob' / 'n_trials=120'
             path2 = Path(dataset_folder) / f'tune_criterion={tune_criterion}' / f'depth_trees_only={depth_trees_only}' / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
-            p_value = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
-            results.append({'tune_criterion': tune_criterion, 'depth_trees_only':depth_trees_only, 'n_trials': 120, 
-                'function': 'Score(tune_rf_oob) (better ?)\nScore(tune_rf_oob_plateau)', 'p_value': p_value})
+            significance = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
+            results.append({TUNE: yn(tune_criterion), DEPTH: yn(depth_trees_only), NTRIALS: 120, 
+                'algorithm': f"Score: {BASE} vs {PLAT}", SIGNIFICANCE: significance})
 
     path1 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=False' / 'tune_rf_oob' / 'n_trials=120'
     path2 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=True'  / 'tune_rf_oob' / 'n_trials=120'
-    p_value = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
-    results.append({'tune_criterion': False, 'function': 'tune_rf_oob', 'n_trials': 120, 
-        'depth_trees_only': 'Score(False) (better ?)\nScore(True)', 'p_value': p_value})
+    significance = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
+    results.append({TUNE: yn(False), 'algorithm': BASE, NTRIALS: 120, 
+        DEPTH: f"Score: {yn(False)} vs {yn(True)}", SIGNIFICANCE: significance})
 
     path1 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=False' / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
     path2 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=True'  / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
-    p_value = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
-    results.append({'tune_criterion': False, 'function': 'tune_rf_oob_plateau', 'n_trials': 120, 
-        'depth_trees_only': 'Score(False) (better ?)\nScore(True)', 'p_value': p_value})
+    significance = check(path1, path2, 'BEST scores', 'greater', save_plots=save_plots)
+    results.append({TUNE: yn(False), 'algorithm': PLAT, NTRIALS: 120, 
+        DEPTH: f"Score: {yn(False)} vs {yn(True)}", SIGNIFICANCE: significance})
 
     path1 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=True' / 'tune_rf_oob' / 'n_trials=120'
     path2 = Path(dataset_folder) / 'tune_criterion=True'  / 'depth_trees_only=True' / 'tune_rf_oob' / 'n_trials=120'
-    p_value = check(path1, path2, 'BEST scores', 'less', save_plots=save_plots)
-    results.append({'depth_trees_only': True, 'function': 'tune_rf_oob', 'n_trials': 120, 
-        'tune_criterion': 'Score(False) (better ?)\nScore(True)', 'p_value': p_value})
+    significance = check(path1, path2, 'BEST scores', 'less', save_plots=save_plots)
+    results.append({DEPTH: yn(True), 'algorithm': BASE, NTRIALS: 120, 
+        TUNE: f"Score: {yn(False)} vs {yn(True)}", SIGNIFICANCE: significance})
 
     path1 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=True' / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
     path2 = Path(dataset_folder) / 'tune_criterion=True' / 'depth_trees_only=True' / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
-    p_value = check(path1, path2, 'BEST scores', 'less', save_plots=save_plots)
-    results.append({'depth_trees_only': True, 'function': 'tune_rf_oob_plateau', 'n_trials': 120, 
-        'tune_criterion': f"Score(False) (better ?)\nScore(True)", 'p_value': p_value})
+    significance = check(path1, path2, 'BEST scores', 'less', save_plots=save_plots)
+    results.append({DEPTH: yn(True), 'algorithm': PLAT, NTRIALS: 120, 
+        TUNE: f"Score: {yn(False)} vs {yn(True)}", SIGNIFICANCE: significance})
 
     path1 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=False' / 'tune_rf_oob' / 'n_trials=120'
     path2 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=False' / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
-    p_value = check(path1, path2, 'Total time', 'greater', save_plots=save_plots)
-    results.append({'tune_criterion': False, 'depth_trees_only': False, 'n_trials': 120, 
-        'function': f"Time(tune_rf_oob) (better ?)\nTime(tune_rf_oob_plateau)", 'p_value': p_value})
+    significance = check(path1, path2, 'Total time', 'greater', save_plots=save_plots)
+    results.append({TUNE: yn(False), DEPTH: yn(False), NTRIALS: 120, 
+        'algorithm': f"Time: {BASE} vs {PLAT}", SIGNIFICANCE: significance})
 
     path1 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=False' / 'tune_rf_oob' / 'n_trials=120'
     path2 = Path(dataset_folder) / 'tune_criterion=False' / 'depth_trees_only=False' / 'tune_rf_oob_plateau' / f'{delta_dir}' / 'n_trials=120'
-    p_value = check(path1, path2, 'n_estimators', 'greater', save_plots=save_plots)
-    results.append({'tune_criterion': False, 'depth_trees_only': False, 'n_trials': 120, 
-        'function': f"n_estimators(tune_rf_oob) (better ?)\nn_estimators(tune_rf_oob_plateau)", 'p_value': p_value})
+    significance = check(path1, path2, 'n_estimators', 'greater', save_plots=save_plots)
+    results.append({TUNE: yn(False), DEPTH: yn(False), NTRIALS: 120, 
+        'algorithm': f"$T$: {BASE} vs {PLAT}", SIGNIFICANCE: significance})
 
     # Convert the results to a DataFrame for easier viewing
     res = []
     for d in results:
         res.append(
-            {('p_value', os.path.basename(Path(dataset_folder))) if k == 'p_value' else ('', k): v for k, v in d.items()}
+            {(SIGNIFICANCE, os.path.basename(Path(dataset_folder)).replace("_", " ")) if k == SIGNIFICANCE else ('', k): v for k, v in d.items()}
         )
     columns = pd.MultiIndex.from_tuples(res[0].keys(), names=['', ''])
     return pd.DataFrame(res, columns=columns)
