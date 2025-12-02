@@ -148,7 +148,7 @@ def tune_rf_oob(
     *,
     # --- Search space ---
     max_features_grid: Sequence[object] = ("sqrt", 0.25, 1/3, 0.5, 0.7, 1.0),
-    max_depth_range: Tuple[int, int] = (4, 40),
+    max_depth_range: Tuple[int, int] = (1, 40),
     n_estimators_range: Tuple[int, int] = (50, 2000),
     min_samples_leaf_range: Tuple[int, int] = (1, 20),
     min_samples_split_range: Tuple[int, int] = (2, 40),
@@ -187,7 +187,7 @@ def tune_rf_oob(
 
     max_features_grid : sequence, default=("sqrt", 0.25, 1/3, 0.5, 0.7, 1.0)
         The set of values to sample for the `max_features` parameter of RandomForest.
-    max_depth_range : tuple of int, default=(4, 40)
+    max_depth_range : tuple of int, default=(1, 40)
         The range of values to sample for the `max_depth` parameter of RandomForest.
     n_estimators_range : tuple of int, default=(50, 2000)
         The range of values to sample for the `n_estimators` parameter of RandomForest.
@@ -384,7 +384,7 @@ def tune_rf_oob_plateau(
     *,
     # --- Search space ---
     max_features_grid: Sequence[object] = ("sqrt", 0.25, 1/3, 0.5, 0.7, 1.0),
-    max_depth_range: Tuple[int, int] = (4, 40),
+    max_depth_range: Tuple[int, int] = (1, 40),
     min_samples_leaf_range: Tuple[int, int] = (1, 20),
     min_samples_split_range: Tuple[int, int] = (2, 40),
     tune_criterion: bool = True,
@@ -397,7 +397,7 @@ def tune_rf_oob_plateau(
     n_estimators_start: int = 100,
     scale_factor: float = 1.5,
     delta: float = 1e-3,
-    max_trees: int = 5000,
+    max_trees: int = 10000,
 
     # --- Optuna / runtime ---
     sampler: Optional[optuna.samplers.BaseSampler] = None,
@@ -468,7 +468,7 @@ def tune_rf_oob_plateau(
 
     max_features_grid : sequence of {'sqrt' or float in (0, 1]}, default=("sqrt", 0.25, 1/3, 0.5, 0.7, 1.0)
         Candidate values for `max_features`. 'sqrt' is passed as-is; floats are interpreted as fractions of `n_features`.
-    max_depth_range : (int, int), default=(4, 40)
+    max_depth_range : (int, int), default=(1, 40)
         Inclusive sampling range for `max_depth`.
     min_samples_leaf_range : (int, int), default=(1, 20)
         Inclusive sampling range for `min_samples_leaf`.
@@ -492,9 +492,9 @@ def tune_rf_oob_plateau(
         Baseline initializer for the first triplet ([L, B, R] is built around this baseline).
     scale_factor : float, default=1.5
         Geometric spacing (> 1) between the triplet points.
-    delta : float, default=2e-3
+    delta : float, default=1e-3
         Relative tolerance in plateau checks: `abs(a-b)/max(|b|, eps) <= delta`.
-    max_trees : int, default=5000
+    max_trees : int, default=10000
         Upper bound for feasible tree counts.
 
     sampler : optuna.samplers.BaseSampler or None, default=None
