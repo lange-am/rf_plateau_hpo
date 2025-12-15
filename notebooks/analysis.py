@@ -19,11 +19,13 @@ Key Functions:
 3. `read_experiment_results()`: Analyzes the results of experiments stored in `.dill` files. 
    Computes statistics (mean, std) and generates visualizations (boxplots) for key metrics like BEST scores, total time, and n_estimators.
 
-4. `compare_experiment_groups()`: Compares results between different experiment groups using statistical tests (t-test, Mann-Whitney U).
+4. `experiment_comparison_table()`: Compares results between different experiment groups using statistical tests (t-test, Mann-Whitney U).
 
 5. `process_html_table()`: Creates ultra-compact HTML table formatting for comparison results with minimal column widths.
+
+6. `tab2tex()`: Translates DataFrame from experiment_comparison_table() to latex's tabular environmemnt.
    
-6. `plot_dataset_comparisons()`: Plots comparisons of key metrics (e.g., total time, BEST scores, n_estimators) between experiment groups.
+7. `plot_dataset_comparisons()`: Plots comparisons of key metrics (e.g., total time, BEST scores, n_estimators) between experiment groups.
 
 
 Additional Utilities:
@@ -507,15 +509,17 @@ def bootstrap_effect_size_alternative(
     
     return test_name, test_p, effect_mean, effect_p_value
 
-_BASE = "BASE"
-_PLAT = "PLAT"
+_BASE = "classic Optuna"
+_PLAT = "plateau search"
 
 
-def compare_experiment_groups(
+def experiment_comparison_table(
     dataset_folder: str, 
     delta_dir: str = "delta=1e-3",
     n_trials: Tuple[int, int] = (40, 120), 
-    save_plots: bool = True
+    save_plots: bool = True,
+    show_epsilon_column = True,
+    show_effect_size = True
 ) -> pd.DataFrame:
     """
     Compare experiment groups using statistical tests and effect size measures.
@@ -525,10 +529,11 @@ def compare_experiment_groups(
     
     Args:
         dataset_folder: Path to the dataset folder containing experiment results
-        delta_dir: Delta parameter directory for plateau method.
+        delta_dir: Delta parameter directory for plateau method 
+            (shown as \varepsilon in the table to avoid confusion with Cliff's \delta).
         n_trials: Tuple of (low, high) trial counts to compare
         save_plots: Whether to save generated plots during analysis
-        
+
     Returns:
         DataFrame with comparison results using MultiIndex columns
     """
@@ -537,7 +542,9 @@ def compare_experiment_groups(
     DEPTH_ONLY = "only depth"
     ALGORITHM = "algorithm"
     N_TRIALS = f"$n_{{trials}}$"
-    SIGNIFICANCE = "t-test $p_{value}$, Cohen's $d$ (or Mann-Whitney $p_{value}$, Cliff's $\delta$)"
+    SIGNIFICANCE = "t-test p-value, Cohen's $d$ (or Mann-Whitney p-value, Cliff's $\delta$)"
+    if not show_effect_size:
+        SIGNIFICANCE = "t-test or Mann-Whitney p-value"
     
     def yn(x: bool) -> str:
         return "YES" if x else "NO"
@@ -581,40 +588,54 @@ def compare_experiment_groups(
             exp_res1[param], exp_res2[param], alternative=current_alternative
         )
         
+        if not show_effect_size:
+            effect_mean = None
+
         return _format_comparison_result(test_name, test_p, effect_mean), exp_res1, exp_res2
     
-    def _format_comparison_result(test_name: str, test_p: float, effect_mean: float) -> str:
+    def _format_comparison_result(
+        test_name: str, 
+        test_p: float, 
+        effect_mean: Optional[float] = None
+    ) -> str:
         """Format statistical comparison results for display."""
-        d_name = r"\delta" if "MW" in test_name else "d"
-        effect_threshold = 0.5 if d_name == "d" else 0.28
-        
-        # Format p-value
+        # Format p-value in scientific notation
         test_p_str = f"{test_p:.1e}"
+        
+        # Convert to LaTeX scientific notation
         if 'e-' in test_p_str:
             base, exp = test_p_str.split('e-')
-            test_p_str = f"{base}e-{exp.lstrip('0')}"
-        
-        # Format effect size
-        effect_mean_str = f"{effect_mean:.2f}"
+            exp_clean = exp.lstrip('0') or '0'
+            test_p_str = f"{base}\\times10^{{-{exp_clean}}}"
+        elif 'e+' in test_p_str:
+            base, exp = test_p_str.split('e+')
+            exp_clean = exp.lstrip('0') or '0'
+            test_p_str = f"{base}\\times10^{{{exp_clean}}}"
         
         # Apply bold formatting for significant results
-        p_value_formatted = (
-            r"$\mathbf{" + test_p_str + "}$" if test_p < 0.05 else f"${test_p_str}$"
-        )
-        effect_formatted = (
-            f"${d_name}=\\mathbf{{{effect_mean_str}}}$" 
-            if abs(effect_mean) >= effect_threshold 
-            else f"${d_name}={effect_mean_str}$"
-        )
+        p_value_formatted = (rf"$\mathbf{{{test_p_str}}}$" 
+                           if test_p < 0.05 else f"${test_p_str}$")
         
-        return f"{p_value_formatted},\\\\ {effect_formatted}"
-    
+        # Format effect size if present
+        if effect_mean is not None:
+            d_name = r"\delta" if "MW" in test_name else "d"
+            effect_threshold = 0.5 if d_name == "d" else 0.28
+            
+            effect_mean_str = f"{effect_mean:.2f}"
+            effect_formatted = (f"${d_name}=\\mathbf{{{effect_mean_str}}}$" 
+                              if abs(effect_mean) >= effect_threshold 
+                              else f"${d_name}={effect_mean_str}$")
+            
+            return f"{p_value_formatted}, {effect_formatted}"
+        
+        return f"{p_value_formatted}"
+
     def _build_comparison_row(
         tune_criterion: Union[bool, str], depth_trees_only: Union[bool, str], 
         algorithm: str, epsilon: str, n_trials_display: str, significance: str
     ) -> Dict:
         """Build a standardized comparison row."""
-        return {
+        row = {
             TUNE_CRITERION: tune_criterion if isinstance(tune_criterion, str) else yn(tune_criterion),
             DEPTH_ONLY: depth_trees_only if isinstance(depth_trees_only, str) else yn(depth_trees_only),
             ALGORITHM: algorithm,
@@ -622,6 +643,10 @@ def compare_experiment_groups(
             N_TRIALS: n_trials_display,
             SIGNIFICANCE: significance
         }
+
+        if not show_epsilon_column:
+            del row[r'$\varepsilon$']
+        return row
     
     def _get_dataset_display_name(exp_res: Optional[Dict]) -> str:
         """Extract formatted dataset name from experiment results."""
@@ -644,7 +669,7 @@ def compare_experiment_groups(
     comparison_configs = []
     
     # Comparison 1: BASE algorithm with different n_trials
-    for tune in [False, True]:
+    for tune in [True, False]:
         for depth in [True, False]:
             comparison_configs.append({
                 'path1': Path(dataset_folder) / f'tune_criterion={tune}' / f'depth_trees_only={depth}' / 'tune_rf_oob' / f'n_trials={n_trials[1]}',
@@ -655,7 +680,7 @@ def compare_experiment_groups(
             })
     
     # Comparison 2: PLAT algorithm with different n_trials  
-    for tune in [False, True]:
+    for tune in [True, False]:
         for depth in [True, False]:
             comparison_configs.append({
                 'path1': Path(dataset_folder) / f'tune_criterion={tune}' / f'depth_trees_only={depth}' / 'tune_rf_oob_plateau' / delta_dir / f'n_trials={n_trials[1]}',
@@ -666,7 +691,7 @@ def compare_experiment_groups(
             })
     
     # Comparison 3: BASE vs PLAT algorithm comparison
-    for tune in [False, True]:
+    for tune in [True, False]:
         for depth in [True, False]:
             comparison_configs.append({
                 'path1': Path(dataset_folder) / f'tune_criterion={tune}' / f'depth_trees_only={depth}' / 'tune_rf_oob' / f"n_trials={n_trials[1]}",
@@ -676,27 +701,27 @@ def compare_experiment_groups(
                 'epsilon': delta_dir.split('=')[1], 'n_trials_display': n_trials[1]
             })
 
-    # Comparison 4: Depth tuning comparison 
+    # Comparison 4: Criterion tuning comparison
     for algo in [_BASE, _PLAT]:
-        for tune in [False, True]:
-            alg_path = 'tune_rf_oob' if algo == _BASE else Path('tune_rf_oob_plateau') / delta_dir
-            comparison_configs.append({
-                'path1': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=False' / alg_path / f"n_trials={n_trials[1]}",
-                'path2': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=True' / alg_path / f"n_trials={n_trials[1]}",
-                'param': "BEST scores", 'alternative': "two-sided",
-                'tune': tune, 'depth': f"Score: {yn(False)} vs {yn(True)}", 'algo': algo,
-                'epsilon': "" if algo == _BASE else delta_dir.split('=')[1], 'n_trials_display': n_trials[1]
-            })
-
-    # Comparison 5: Criterion tuning comparison
-    for algo in [_BASE, _PLAT]:
-        for depth in [False, True]:
+        for depth in [True, False]:
             alg_path = 'tune_rf_oob' if algo == _BASE else Path('tune_rf_oob_plateau') / delta_dir
             comparison_configs.append({
                 'path1': Path(dataset_folder) / 'tune_criterion=True' / f'depth_trees_only={depth}' / alg_path / f"n_trials={n_trials[1]}",
                 'path2': Path(dataset_folder) / 'tune_criterion=False' / f'depth_trees_only={depth}' / alg_path / f"n_trials={n_trials[1]}",
                 'param': "BEST scores", 'alternative': "two-sided",
                 'tune': f"Score: {yn(True)} vs {yn(False)}", 'depth': depth, 'algo': algo,
+                'epsilon': "" if algo == _BASE else delta_dir.split('=')[1], 'n_trials_display': n_trials[1]
+            })
+
+    # Comparison 5: Depth tuning comparison 
+    for algo in [_BASE, _PLAT]:
+        for tune in [True, False]:
+            alg_path = 'tune_rf_oob' if algo == _BASE else Path('tune_rf_oob_plateau') / delta_dir
+            comparison_configs.append({
+                'path1': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=False' / alg_path / f"n_trials={n_trials[1]}",
+                'path2': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=True' / alg_path / f"n_trials={n_trials[1]}",
+                'param': "BEST scores", 'alternative': "two-sided",
+                'tune': tune, 'depth': f"Score: {yn(True)} vs {yn(False)}", 'algo': algo,
                 'epsilon': "" if algo == _BASE else delta_dir.split('=')[1], 'n_trials_display': n_trials[1]
             })
 
@@ -739,7 +764,7 @@ def compare_experiment_groups(
         formatted_results.append(formatted_result)
     
     if formatted_results:
-        columns = pd.MultiIndex.from_tuples(formatted_results[0].keys(), names=['', ''])
+        columns = pd.MultiIndex.from_tuples(formatted_results[0].keys(), names=['level0', 'level1'])
         return pd.DataFrame(formatted_results, columns=columns)
     
     return pd.DataFrame()
@@ -757,44 +782,53 @@ def process_html_table(html_text, padding_horizontal=3, padding_vertical=1, font
         max_col_width: maximum column width in pixels
 
     Usage:
-        df = compare_experiment_groups(dataset)
-        html = df.to_html(notebook=True, escape=False, index=False, classes='dataframe')
+        df = experiment_comparison_table(dataset)
+        html = df.to_html(index=False, classes='dataframe')
         display(HTML(process_html_table(html)))
     """
-    # Replace line breaks
+    # Replace colons with line breaks in headers
     html_text = html_text.replace(r":", ":<br>")
-    html_text = html_text.replace(r"\\", "<br>")
     
     # Process cell content formatting
     def reformat_cells(html):
-        # First replace \mathbf{...} with <b>...</b> in both parts
+        """Reformat LaTeX math to HTML-compatible format."""
+        # Helper functions
         def replace_mathbf(text):
-            # Pattern to match \mathbf{content}
-            pattern = r'\\mathbf{([^}]*)}'
-            return re.sub(pattern, r'<b>\1</b>', text)
+            """Replace \mathbf{...} with <b>...</b>"""
+            return re.sub(r"\\mathbf{(.*?)}", r'<b>\1</b>', text)
 
-        # Pattern to match the cell structure: $...$,<br> $...=...$
-        pattern = r'(\$[^$]+\$),\s*<br>\s*(\$[^=]+)=([^$]+\$)'
+        def convert_latex_scientific(text):
+            """Convert \times10^{...} to e-notation"""
+            def replace_exp(match):
+                exp = match.group(1).replace('{', '').replace('}', '')
+                return f"e{exp.lstrip('0') or '0'}" if exp.startswith('-') else f"e+{exp.lstrip('0').lstrip('+') or '0'}"
 
-        def reformat_match(match):
-            first_part = replace_mathbf(match.group(1).strip('$'))
-            variable = replace_mathbf(match.group(2).strip('$'))
-            value = replace_mathbf(match.group(3).strip('$'))
+            return re.sub(r'\\times10\^{(.*)}', replace_exp, text)
 
-            # Remove any remaining $ signs and apply formatting
-            first_part = first_part.replace('$', '')
-            variable = variable.replace('$', '')
-            value = value.replace('$', '')
+        # Pattern to match p-value and effect size
+        pattern_two_parts = r'\$([^$]+\\times[^$]+)\$,\s*\$([^=]+)=([^$]+)\$'
+        # Pattern to match only p-value
+        pattern_single_part = r'\$([^$]+\\times[^$]+)\$'
 
-            return f'{first_part},<br> ${variable}$={value}'
+        # Process two parts (p-value and effect size)
+        def reformat_two_parts(match):
+            p_val, var, val = match.groups()
+            p_val_processed = convert_latex_scientific(replace_mathbf(p_val))
+            var_processed = replace_mathbf(var)
+            val_processed = replace_mathbf(val)
+            return f'{p_val_processed},<br>${var_processed}$={val_processed}'
 
-        # Apply the main transformation
-        html = re.sub(pattern, reformat_match, html)
+        # Process single part (only p-value)
+        def reformat_single_part(match):
+            part = convert_latex_scientific(replace_mathbf(match.group(1)))
+            return part
 
-        # Additional pass to handle any remaining \mathbf commands
-        html = replace_mathbf(html)
-    
-        return html
+        # Apply transformations
+        html_ = re.sub(pattern_two_parts, reformat_two_parts, html)
+        if html_ == html:
+            html_ = re.sub(pattern_single_part, reformat_single_part, html_)
+
+        return html_    
 
     html_text = reformat_cells(html_text)
     
@@ -806,7 +840,7 @@ def process_html_table(html_text, padding_horizontal=3, padding_vertical=1, font
         border-spacing: 0;
         font-size: {font_size}em;
         width: auto !important;
-        table-layout: auto; /* Let columns shrink to content */
+        table-layout: auto;
         margin: 0;
         padding: 0;
     }}
@@ -817,20 +851,19 @@ def process_html_table(html_text, padding_horizontal=3, padding_vertical=1, font
         vertical-align: middle;
         line-height: 1;
         max-width: {max_col_width}px;
-        min-width: 0; /* Allow columns to shrink below content width if needed */
-        width: auto; /* Let browser determine optimal width */
-        white-space: nowrap; /* Critical: prevent text wrapping */
+        min-width: 0;
+        width: auto;
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }}
     .dataframe th {{
         background-color: #f5f5f5;
         font-weight: bold;
-        white-space: normal; /* Only headers can wrap */
+        white-space: normal;
         word-break: break-word;
         hyphens: auto;
     }}
-    /* Handle cells with explicit line breaks */
     .dataframe td:has(br) {{
         white-space: normal;
         line-height: 1.2;
@@ -839,18 +872,83 @@ def process_html_table(html_text, padding_horizontal=3, padding_vertical=1, font
         display: block;
         margin: 1px 0;
     }}
-    /* Make numeric/content columns even more compact */
     .dataframe td:contains("."),
     .dataframe td:contains("e"),
     .dataframe td:contains("$") {{
-        font-family: "Courier New", monospace; /* Monospace for consistent width */
-        letter-spacing: -0.5px; /* Tighten spacing */
+        font-family: "Courier New", monospace;
+        letter-spacing: -0.5px;
     }}
     </style>
     """
     
     return f'<div style="overflow-x: auto; display: block; width: fit-content;">{html_text}</div>' + css
 
+
+def tab2tex(
+    df_tex: pd.DataFrame, 
+    halign: str = 'c',
+    valign: str = 'm{1.6cm}',
+    makecell_option = '*',
+) -> str:
+    """
+    Convert DataFrame to LaTeX tabular with fixed-width columns.
+    
+    Args:
+        df_tex: DataFrame from experiment_comparison_table()
+        column_width: Width for LaTeX p{} columns
+        align: Alignment inside p{} columns ('c', 'l', 'r')
+    
+    Returns:
+        LaTeX tabular code
+    """
+    def bold_header(cols):
+        def bold_cell(col_cell: str) -> str:
+            if r'\textbf{' in col_cell or r'\mathbf{' in col_cell:
+                return col_cell
+
+            s = re.sub(r'\$([^\$]+)\$', lambda match: f'$\\mathbf{{{match.group(1)}}}$', col_cell)
+
+            return f'\\textbf{{{s}}}' if s else ''
+
+        if isinstance(cols, pd.MultiIndex):
+            new_cols = []
+            for level_idx in range(cols.nlevels):
+                level_values = cols.get_level_values(level_idx)
+                new_level = [bold_cell(str(val)) if pd.notna(val) else '' for val in level_values]
+                new_cols.append(new_level)
+            return pd.MultiIndex.from_arrays(new_cols)
+        return [bold_cell(str(col)) if pd.notna(col) else '' for col in cols]
+
+    # Build column specification with p{} and alignment
+    alignment_cmd = {'c': '\\centering', 'l': '\\raggedright', 'r': '\\raggedleft'}.get(halign, '\\centering')
+    col_spec = f">{{{alignment_cmd}\\arraybackslash}}{valign}"
+    n_cols = len(df_tex.columns)
+    col_format = '|'.join([''] + [col_spec]*n_cols + [''])
+    
+    # Process cell content - add line break for two-part results
+    def process_cell(cell):
+        cell_str = str(cell)
+        cell_str = cell_str.replace(r": ", r":\\")
+        pattern = r'\$(.*?)\$,\s*\$(.*?)\$'
+        match = re.search(pattern, cell_str)
+
+        cell_str = f"\\makecell{makecell_option}{{{cell_str}}}"
+        if match:
+            cell_str = f"\\makecell{makecell_option}{{${match.group(1)}$\\\\${match.group(2)}$}}"
+
+        return cell_str
+    
+    # Apply processing and convert to LaTeX
+    processed_df = df_tex.applymap(process_cell)
+    processed_df.columns = bold_header(processed_df.columns)
+    latex_str = processed_df.style.hide(axis="index").to_latex(
+        column_format=col_format,
+        multicol_align=halign+'|',
+        hrules=True,
+    )
+
+    
+    return latex_str
 
 def plot_dataset_comparisons(
     dataset_folders: List[str],
@@ -931,7 +1029,6 @@ def plot_dataset_comparisons(
         base_path = Path(dataset_folder) / f"tune_criterion={tune_criterion}" / f"depth_trees_only={depth_trees_only}"
         oob_path = base_path / "tune_rf_oob" / f"n_trials={n_trials}"
         plateau_path = base_path / "tune_rf_oob_plateau" / delta_dir_ / f"n_trials={n_trials}"
-        print(plateau_path, delta_dir_)
         
         try:
             res_oob = read_experiment_results(oob_path, save_plots=save_plots)
@@ -965,7 +1062,7 @@ def plot_dataset_comparisons(
             x_n_estimators = [5.0, 6.0]
         else:
             x_time = [0.0, 1.0]
-            x_n_estimators = [3.0, 4.0]
+            x_n_estimators = [2.5, 3.5]
         
         # Time bars (left axis)
         bars_time = ax.bar(
