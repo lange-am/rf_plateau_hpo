@@ -110,13 +110,34 @@ print("Best params:", study_p.best_params)
 
 ## Notebooks
 
-See `notebooks/01_quickstart.ipynb` and `notebooks/paper_repro.ipynb`.  
-They include:
-- Synthetic classification & regression examples with `tune_rf_oob`
-- sklearn `breast_cancer` example
-- Titanic example using the Kaggle competition (`kaggle-comp:`). If you want a public
-  mirror as a fallback, add a separate YAML entry with a `url:` loader and choose it
-  explicitly if Kaggle is not configured.
+The primary notebook for reproducing all experiments from the paper is [`paper_repro.ipynb`](paper_repro.ipynb). This comprehensive notebook contains:
+
+- **Dataset loading and preprocessing**: All datasets are loaded from the declarative registry (`data/datasets.yml`), 
+  with appropriate preprocessing for each: special handling for categorical features, missing values, and class imbalance
+
+- **Hyperparameter optimization experiments**: Systematic comparison of two Random Forest tuning approaches across multiple configurations:
+  - **Classic Optuna search**: Using `tune_rf_oob` with adaptive trial counts
+  - **Plateau search**: Using `tune_rf_oob_plateau` to find sufficient trees adaptively
+  - Four configuration variations tested for each method:
+    - Tune criterion: YES/NO
+    - Only depth restriction: YES/NO
+    - Trials: 120 vs. 40 comparison
+
+- **Statistical analysis**: Comprehensive hypothesis testing with effect size measures:
+  - **Performance metrics**: ROC-AUC for classification, RMSE for regression
+  - **Statistical tests**: t-test for normal distributions, Mann-Whitney U-test otherwise
+  - **Effect sizes**: Cohen's d and Cliff's δ calculations
+  - **Comparisons**: Method differences, trial count impact, configuration effects
+
+- **Results compilation and export**:
+  - Interactive HTML table with all statistical results
+  - LaTeX table generation for publication (`n_trials_120_vs_40.tex`, `criterion_depth_yes_vs_no.tex`)
+  - Performance, time, and tree count comparisons across all datasets
+
+- **Visual comparison**: Automated generation of comparative visualizations for each dataset:
+  - Performance distribution (box plots)
+  - Time efficiency comparisons
+  - Tree count analysis
 
 ---
 
