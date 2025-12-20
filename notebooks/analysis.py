@@ -8,6 +8,12 @@ and Plateau-based tuning methods (i.e., `tune_rf_oob()` and `tune_rf_oob_plateau
 Functions in this module allow the execution of experiments with customizable hyperparameters,
 logging of experiment details, and the analysis of results.
 
+Copyright (c) 2025 Andrey Lange
+Licensed under the MIT License. See the LICENSE file in the project root 
+for full license information.
+
+Repository: https://github.com/lange-am/rf_plateau_hpo
+
 Key Functions:
 --------------
 1. `run_experiment()`: Runs an experiment with a given Random Forest tuning method (`tune_rf_oob` or `tune_rf_oob_plateau`).
