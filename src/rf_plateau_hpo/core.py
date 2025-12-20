@@ -1,6 +1,19 @@
 """
 rf_plateau_hpo.core
 -------------------
+
+Implementation of the core algorithms for plateau-based Random Forest tuning.
+
+This module implements the methods described in the paper:
+"How Many Trees in Random Forest? A Revisited Approach with Plateau Search 
+and Optuna Integration" (Submitted to IEEE Access).
+
+Copyright (c) 2025 Andrey Lange
+Licensed under the MIT License. See the LICENSE file in the project root 
+for full license information.
+
+Repository: https://github.com/lange-am/rf_plateau_hpo
+
 Two tuners for Random Forest:
 
 1) tune_rf_oob:
