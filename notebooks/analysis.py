@@ -515,7 +515,7 @@ def bootstrap_effect_size_alternative(
     
     return test_name, test_p, effect_mean, effect_p_value
 
-_BASE = "classic Optuna"
+_BASE = "classic search"
 _PLAT = "plateau search"
 
 
@@ -724,8 +724,8 @@ def experiment_comparison_table(
         for tune in [True, False]:
             alg_path = 'tune_rf_oob' if algo == _BASE else Path('tune_rf_oob_plateau') / delta_dir
             comparison_configs.append({
-                'path1': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=False' / alg_path / f"n_trials={n_trials[1]}",
-                'path2': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=True' / alg_path / f"n_trials={n_trials[1]}",
+                'path1': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=True' / alg_path / f"n_trials={n_trials[1]}",
+                'path2': Path(dataset_folder) / f'tune_criterion={tune}' / 'depth_trees_only=False' / alg_path / f"n_trials={n_trials[1]}",
                 'param': "BEST scores", 'alternative': "two-sided",
                 'tune': tune, 'depth': f"Score: {yn(True)} vs {yn(False)}", 'algo': algo,
                 'epsilon': "" if algo == _BASE else delta_dir.split('=')[1], 'n_trials_display': n_trials[1]
@@ -968,7 +968,8 @@ def plot_dataset_comparisons(
     min_w: float = 3.0,
     min_h: float = 2.5,
     tight_layout_top: float = 0.9,
-    save_plots: bool = True
+    save_plots: bool = True,
+    titles: Optional[List[str]] = None    
 ) -> None:
     """
     Create comparative visualizations of experiment results across multiple datasets.
@@ -995,6 +996,8 @@ def plot_dataset_comparisons(
         min_h: Minimum height per subplot row in inches
         tight_layout_top: Top margin for tight layout
         save_plots: Whether to save generated plots
+        titles: Optional list of custom titles for each dataset subplot. 
+               If provided, must have same length as dataset_folders.        
         
     Returns:
         None
@@ -1003,6 +1006,10 @@ def plot_dataset_comparisons(
     n_datasets = len(dataset_folders)
     ncols = ncols or math.ceil(math.sqrt(n_datasets))
     nrows = math.ceil(n_datasets / ncols)
+
+    if titles is not None:
+        if len(titles) != n_datasets:
+            raise ValueError(f"Length of titles ({len(titles)}) must match length of dataset_folders ({n_datasets})")
     
     # Calculate figure size with dynamic scaling
     fig_width = ncols * min_w
@@ -1110,7 +1117,8 @@ def plot_dataset_comparisons(
             ax3.yaxis.set_major_locator(plt.NullLocator())
         
         # Title and styling
-        ax.set_title(Path(dataset_folder).name, fontsize=TITLE_FONT_SIZE)
+
+        ax.set_title(Path(dataset_folder).name if titles is None else titles[idx], fontsize=TITLE_FONT_SIZE)
         ax.set_xticks([])
         ax.grid(False)
         ax2.grid(False)
