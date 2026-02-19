@@ -14,16 +14,21 @@ for full license information.
 
 Repository: https://github.com/lange-am/rf_plateau_hpo
 
-Two tuners for Random Forest:
+Three tuners for Random Forest:
 
 1) tune_rf_oob:
    Classic Optuna HPO with OOB objective (scikit-learn OOB support).
 
-2) tune_rf_oob_plateau:
+2) tune_rf_oob_bohb:
+   BOHB-like (TPE + Hyperband) multi-fidelity baseline using an external ladder of `n_estimators`
+   and intermediate reports/pruning along that ladder.
+
+3) tune_rf_oob_plateau:
    Triplet-based OOB plateau search that finds a near-minimal `n_estimators`
    while running Bayesian HPO (Optuna) over the other hyperparameters.
 
-Both functions share consistent logging/verbosity and return signatures.
+All functions share consistent logging/verbosity.
+Return values are documented per function.
 They are compatible with Python 3.8+ (no PEP 585 typing).
 """
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -247,7 +252,7 @@ def tune_rf_oob(
         The Optuna study with all trials.
     """
 
-    # --- logging setup (INFO) ---
+    # --- Logging ---
     func_name = inspect.currentframe().f_code.co_name  # type: ignore
     logger = logging.getLogger(f"{__name__}.{func_name}")
 
@@ -264,29 +269,56 @@ def tune_rf_oob(
     if sampler is None:
         sampler = optuna.samplers.TPESampler(seed=random_state)
 
+    pruner = optuna.pruners.MedianPruner(n_warmup_steps=0)
+
     study = optuna.create_study(
         direction="maximize" if greater_is_better else "minimize",
         sampler=sampler,
-        pruner=optuna.pruners.MedianPruner(n_warmup_steps=0),
+        pruner=pruner,
     )
 
-    log_message = (
-        f"Start tuning | problem={problem} | greater_is_better={greater_is_better} | "
-     )
-    log_message += f"max_features_grid={max_features_grid} | "
-    log_message += f"max_depth_range={max_depth_range} | "
-    log_message += f"n_estimators_range={n_estimators_range} | "
-    log_message += f"min_samples_leaf_range={min_samples_leaf_range} | "
-    log_message += f"min_samples_split_range={min_samples_split_range} | "
-    log_message += f"tune_criterion={tune_criterion} "
-    if criterion is not None:
-        log_message += f"| criterion={criterion} "
-    if class_weight is not None:
-        log_message += f"| class_weight={class_weight} "
-    if random_state is not None:
-        log_message += f"| random_state={random_state} "
-    _print(log_message, v_gate=1)
+    # --- Score func name for logging (lambda-safe) ---
+    score_name = getattr(score_func, "__name__", score_func.__class__.__name__)
+    if score_name == "<lambda>":
+        try:
+            src = inspect.getsource(score_func).strip()
+            src = " ".join(src.split())
+            score_name = src[:120] + ("..." if len(src) > 120 else "")
+        except Exception:
+            pass
 
+    score_repr = repr(score_func)
+    if len(score_repr) > 140:
+        score_repr = score_repr[:137] + "..."
+
+    parts = [
+        "Start tuning",
+        f"method={func_name}",
+        f"problem={problem}",
+        f"score_func={score_name}",
+        f"score_func_repr={score_repr}",
+        f"greater_is_better={greater_is_better}",
+        f"max_features_grid={max_features_grid}",
+        f"max_depth_range={max_depth_range}",
+        f"n_estimators_range={n_estimators_range}",
+        f"min_samples_leaf_range={min_samples_leaf_range}",
+        f"min_samples_split_range={min_samples_split_range}",
+        f"tune_criterion={tune_criterion}",
+        f"criterion={criterion}",
+        f"class_weight={class_weight}",
+        f"sampler={sampler.__class__.__name__}",
+        f"pruner={pruner.__class__.__name__}",
+        f"n_trials={n_trials}",
+        f"n_jobs={n_jobs}",
+        f"random_state={random_state}",
+        f"verbose={verbose}",
+        f"log_file={log_file}", 
+        f"refit={refit}"
+    ]
+
+    _print(" | ".join(parts), v_gate=1)
+
+    # --- Objective ---
     def objective(trial: optuna.Trial) -> float:
         # Sample RF hyperparams (incl. n_estimators)
         params = dict(
@@ -306,7 +338,7 @@ def tune_rf_oob(
             else:
                 raise ValueError("The criterion must be None when tune_criterion is True.")
         elif criterion is not None:
-                params["criterion"] = criterion
+            params["criterion"] = criterion
         # Else default RF criterion is used
 
         if problem == 'reg' and class_weight is not None:
@@ -340,7 +372,7 @@ def tune_rf_oob(
                 model.fit(X, y)
                 s = float(model.oob_score_)
         except Warning:
-            _print(f"trees={n_trees:4d} | Model fit or OOB is incomplete!", v_gate=1, step=n_trees)
+            _print(f"trees={n_trees:4d} | Model fit or OOB is incomplete!", v_gate=2, step=n_trees)
             raise optuna.TrialPruned()
         else:
             bad = not np.isfinite(s)
@@ -349,13 +381,13 @@ def tune_rf_oob(
             if hasattr(model, "oob_prediction_"):
                 bad |= not np.isfinite(model.oob_prediction_).all()
             if bad:
-                _print(f"trees={n_trees:4d} | Invalid OOB arrays/score", v_gate=1, step=n_trees)
+                _print(f"trees={n_trees:4d} | Invalid OOB arrays/score", v_gate=2, step=n_trees)
                 raise optuna.TrialPruned()
 
-            _print(f"trees={n_trees:4d} | oob_score={s:.6f}", v_gate=1, step=n_trees)
+            _print(f"trees={n_trees:4d} | oob_score={s:.6f}", v_gate=2, step=n_trees)
             trial.report(s, step=n_trees)
             if trial.should_prune():
-                _print(f"pruned at trees={n_trees}", v_gate=1, step=n_trees)
+                _print(f"pruned at trees={n_trees}", v_gate=2, step=n_trees)
                 raise optuna.TrialPruned()
 
         return s
@@ -363,7 +395,10 @@ def tune_rf_oob(
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study.optimize(objective, n_trials=n_trials)
 
-    completed_trials = [t.state == optuna.trial.TrialState.COMPLETE and t.value is not None for t in study.trials]
+    completed_trials = [
+        t for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE and t.value is not None
+    ]
     if len(completed_trials) == 0:
         _print(f"No completed trials.", v_gate=1)
         return None, study
@@ -372,17 +407,312 @@ def tune_rf_oob(
     _print(f"BEST trial={best_trial.number} | score={best_trial.value:.6f}", v_gate=1)
     _print(f"BEST params={best_trial.params}", v_gate=1)
 
+    # --- Final refit ---
     if refit:
-        final_model = (
-            RandomForestClassifier if problem == "clf" else RandomForestRegressor
-        )(
+        final_params = dict(best_trial.params)
+        final_params.update(
             bootstrap=True,
             n_jobs=n_jobs,
             random_state=random_state,
-            **dict(best_trial.params),
-        ).fit(X, y)
+        )
+
+        # fixed args that might be outside Optuna search space
+        if (problem == "clf") and (class_weight is not None):
+            final_params["class_weight"] = class_weight
+        if ("criterion" not in final_params) and (criterion is not None):
+            final_params["criterion"] = criterion
+
+        Model = RandomForestClassifier if problem == "clf" else RandomForestRegressor
+        final_model = Model(**final_params).fit(X, y)
     else:
-        final_model = None  # no refit; best hyperparameters are in study.best_trial.params
+        final_model = None  # best hyperparameters are in study.best_trial.params
+
+    return final_model, study
+
+
+@scoped_file_logging_for_param("log_file", level=logging.INFO)
+def tune_rf_oob_bohb(
+    X: np.ndarray,
+    y: np.ndarray,
+    problem: Literal["clf", "reg"],
+    score_func: Callable[[np.ndarray, np.ndarray], float],
+    greater_is_better: bool,
+    *,
+    # --- Search space ---
+    max_features_grid: Sequence[object] = ("sqrt", 0.25, 1/3, 0.5, 0.7, 1.0),
+    max_depth_range: Tuple[int, int] = (1, 40),
+    min_samples_leaf_range: Tuple[int, int] = (1, 20),
+    min_samples_split_range: Tuple[int, int] = (2, 40),
+    tune_criterion: bool = True,
+    # --- Pass to Random Forest class ---
+    criterion: Optional[str] = None,
+    class_weight: Optional[Union[str, Dict[str, float], List[Dict[str, float]]]] = None,
+    # --- Hyperband-like resource ladder (n_estimators budgets) ---
+    n_estimators_ladder: Sequence[int] = (64, 128, 256, 512, 1024, 2048),
+    hyperband_reduction_factor: int = 3,
+    hyperband_bootstrap_count: int = 0,
+    # --- Optuna / runtime ---
+    sampler: Optional[optuna.samplers.BaseSampler] = None,
+    n_trials: int = 40,
+    n_jobs: int = -1,
+    random_state: Optional[int] = None,
+    verbose: int = 0,  # 0 silent, 1 per-trial, 2 per-step (ladder rung)
+    # --- Logging ---
+    log_file: Optional[str] = None,
+    # --- Finalization / output ---
+    refit: bool = True,
+):
+    """
+    BOHB-style multi-fidelity baseline for RandomForest using Optuna:
+    TPE sampler + Hyperband pruning, where `n_estimators` is treated as a resource.
+
+    Within each trial (i.e., for one sampled set of RF hyperparameters excluding `n_estimators`),
+    the forest is grown along a fixed increasing ladder of tree counts (n_estimators_ladder)
+    using warm-start. At each rung, the OOB score is computed and reported to Optuna.
+    Optuna's HyperbandPruner may prune the trial early based on intermediate results.
+
+    Notes
+    -----
+    - This routine is intended as a practical multi-fidelity baseline in the same
+      Optuna ecosystem as `tune_rf_oob()` / `tune_rf_oob_plateau()`.
+    - The maximum number of trees used in completed trials equals the largest
+      value in `n_estimators_ladder`.
+    - For classification, a helper wrapper is used internally to compute a custom
+      OOB score from OOB probabilities; the returned `final_model` is a standard
+      scikit-learn RandomForest.
+
+    Parameters
+    ----------
+    X, y : array-like
+        Training data. OOB requires `bootstrap=True` (enforced internally).
+    problem : {'clf', 'reg'}
+        Task type: classification or regression.
+    score_func : callable
+        OOB scoring function with signature ``score_func(y, y_pred_like) -> float``.
+    greater_is_better : bool
+        Direction of optimization for the study.
+
+    n_estimators_ladder : sequence of int
+        Strictly increasing list of tree counts used as resource budgets within each trial.
+    hyperband_reduction_factor : int
+        Hyperband reduction factor (eta) for rung comparisons.
+    hyperband_bootstrap_count : int
+        Hyperband bootstrap_count: how many initial "virtual" trials to stabilize pruning.
+
+    Returns
+    -------
+    final_model : Optional[RandomForestClassifier or RandomForestRegressor]
+        Trained model if `refit=True`; otherwise `None`.
+    study : optuna.Study
+        The Optuna study with all trials.
+    """
+
+    # --- Logging ---
+    func_name = inspect.currentframe().f_code.co_name  # type: ignore
+    logger = logging.getLogger(f"{__name__}.{func_name}")
+
+    assert callable(score_func), "score_func must be (y, y_pred_like) -> float"
+
+    # --- Validate ladder ---
+    ladder = [int(x) for x in n_estimators_ladder]
+    if len(ladder) == 0:
+        raise ValueError("n_estimators_ladder must be non-empty.")
+    if any(x < 1 for x in ladder):
+        raise ValueError("n_estimators_ladder must contain positive integers.")
+    if any(ladder[i] >= ladder[i + 1] for i in range(len(ladder) - 1)):
+        raise ValueError("n_estimators_ladder must be strictly increasing.")
+
+    if hyperband_reduction_factor < 2:
+        raise ValueError("hyperband_reduction_factor must be >= 2.")
+    if hyperband_bootstrap_count < 0:
+        raise ValueError("hyperband_bootstrap_count must be >= 0.")
+
+    t0 = time.perf_counter()
+    def _print(msg: str, v_gate: int = 1, step: Optional[int] = None) -> None:
+        elapsed = time.perf_counter() - t0
+        tagged = f"{msg} [t+{elapsed:.3f}s]" if step is None else f"[step {step}] {msg} [t+{elapsed:.3f}s]"
+        if verbose >= v_gate:
+            print(tagged)
+        logger.info(tagged)
+
+    # --- Optuna study setup ---
+    if sampler is None:
+        sampler = optuna.samplers.TPESampler(seed=random_state)
+
+    pruner = optuna.pruners.HyperbandPruner(
+        min_resource=ladder[0],
+        max_resource=ladder[-1],
+        reduction_factor=hyperband_reduction_factor,
+        bootstrap_count=hyperband_bootstrap_count,
+    )
+
+    study = optuna.create_study(
+        direction="maximize" if greater_is_better else "minimize",
+        sampler=sampler,
+        pruner=pruner,
+    )
+
+    # --- Score func name for logging (lambda-safe) ---
+    score_name = getattr(score_func, "__name__", score_func.__class__.__name__)
+    if score_name == "<lambda>":
+        try:
+            src = inspect.getsource(score_func).strip()
+            src = " ".join(src.split())
+            score_name = src[:120] + ("..." if len(src) > 120 else "")
+        except Exception:
+            pass
+
+    score_repr = repr(score_func)
+    if len(score_repr) > 140:
+        score_repr = score_repr[:137] + "..."
+
+    parts = [
+        "Start tuning",
+        f"method={func_name}",
+        f"problem={problem}",
+        f"score_func={score_name}",
+        f"score_func_repr={score_repr}",
+        f"greater_is_better={greater_is_better}",
+        f"max_features_grid={max_features_grid}",
+        f"max_depth_range={max_depth_range}",
+        f"min_samples_leaf_range={min_samples_leaf_range}",
+        f"min_samples_split_range={min_samples_split_range}",
+        f"tune_criterion={tune_criterion}",
+        f"criterion={criterion}",
+        f"class_weight={class_weight}",
+        f"n_estimators_ladder={tuple(ladder)}",
+        f"hyperband_reduction_factor={hyperband_reduction_factor}",
+        f"hyperband_bootstrap_count={hyperband_bootstrap_count}",
+        f"sampler={sampler.__class__.__name__}",
+        f"pruner={pruner.__class__.__name__}",
+        f"n_trials={n_trials}",
+        f"n_jobs={n_jobs}",
+        f"random_state={random_state}",
+        f"verbose={verbose}",
+        f"log_file={log_file}", 
+        f"refit={refit}"
+    ]
+
+    _print(" | ".join(parts), v_gate=1)
+
+    # --- Objective ---
+    def objective(trial: optuna.Trial) -> float:
+        # Sample RF hyperparams (resource n_estimators is NOT sampled here)
+        params = dict(
+            max_depth=trial.suggest_int("max_depth", *max_depth_range),
+            max_features=trial.suggest_categorical("max_features", list(max_features_grid)),
+            min_samples_leaf=trial.suggest_int("min_samples_leaf", *min_samples_leaf_range),
+            min_samples_split=trial.suggest_int("min_samples_split", *min_samples_split_range),
+        )
+
+        if tune_criterion:
+            if criterion is None:
+                params["criterion"] = trial.suggest_categorical(
+                    "criterion",
+                    ["gini", "entropy", "log_loss"] if problem == "clf" else ["squared_error", "absolute_error"],
+                )
+            else:
+                raise ValueError("The criterion must be None when tune_criterion is True.")
+        elif criterion is not None:
+            params["criterion"] = criterion
+        # Else default RF criterion is used
+
+        if problem == "reg" and class_weight is not None:
+            raise ValueError("class_weight cannot be used for regression problems.")
+
+        _print(f"[trial {trial.number}] params={params}", v_gate=1)
+
+        # Build a warm-start model grown along ladder
+        if problem == "clf":
+            model = RFCWithOOBProba(
+                n_estimators=0,
+                bootstrap=True,
+                oob_score=True,
+                warm_start=True,
+                n_jobs=n_jobs,
+                random_state=random_state,
+                class_weight=class_weight,
+                **params,
+            )
+            model.oob_score_func = score_func
+        else:
+            model = RandomForestRegressor(
+                n_estimators=0,
+                bootstrap=True,
+                oob_score=score_func,
+                warm_start=True,
+                n_jobs=n_jobs,
+                random_state=random_state,
+                **params,
+            )
+
+        # Grow the forest rung-by-rung and allow pruning at each rung
+        for n_trees in ladder:
+            model.n_estimators=n_trees
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", category=Warning)
+                    model.fit(X, y)
+                    s = float(model.oob_score_)
+            except Warning:
+                _print(f"trees={n_trees:4d} | Model fit or OOB is incomplete!", v_gate=2, step=n_trees)
+                raise optuna.TrialPruned()
+            else:
+                bad = not np.isfinite(s)
+                if hasattr(model, "oob_decision_function_"):
+                    bad |= not np.isfinite(model.oob_decision_function_).all()
+                if hasattr(model, "oob_prediction_"):
+                    bad |= not np.isfinite(model.oob_prediction_).all()
+                if bad:
+                    _print(f"trees={n_trees:4d} | Invalid OOB arrays/score", v_gate=2, step=n_trees)
+                    raise optuna.TrialPruned()
+
+                _print(f"trees={n_trees:4d} | oob_score={s:.6f}", v_gate=2, step=n_trees)
+
+                trial.report(s, step=int(n_trees))
+                if trial.should_prune():
+                    _print(f"pruned at trees={n_trees}", v_gate=2, step=n_trees)
+                    raise optuna.TrialPruned()
+
+        return s  # last rung score
+
+    # --- Optuna execution ---
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    study.optimize(objective, n_trials=n_trials)
+
+    completed_trials = [
+        t for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE and t.value is not None
+    ]
+    if len(completed_trials) == 0:
+        _print("No completed trials.", v_gate=1)
+        return None, study
+
+    best_trial = study.best_trial
+    _print(f"BEST trial={best_trial.number} | score={best_trial.value:.6f}", v_gate=1)
+    _print(f"BEST params={best_trial.params}", v_gate=1)
+    _print(f"BEST n_estimators (max ladder)={ladder[-1]}", v_gate=1)
+
+    # --- Final refit ---
+    if refit:
+        final_params = dict(best_trial.params)
+        final_params.update(
+            n_estimators=int(ladder[-1]),
+            bootstrap=True,
+            n_jobs=n_jobs,
+            random_state=random_state,
+        )
+
+        # Fixed args that are not necessarily in the Optuna search space
+        if (problem == "clf") and (class_weight is not None):
+            final_params["class_weight"] = class_weight
+        if ("criterion" not in final_params) and (criterion is not None):
+            final_params["criterion"] = criterion
+
+        Model = RandomForestClassifier if problem == "clf" else RandomForestRegressor
+        final_model = Model(**final_params).fit(X, y)
+    else:
+        final_model = None  # best hyperparameters are in study.best_trial.params
 
     return final_model, study
 
@@ -549,11 +879,11 @@ def tune_rf_oob_plateau(
     - If a shift produces an invalid triplet, the triplet stays unchanged and the shift is marked as blocked.
     """
 
-    # --- logging setup (INFO) ---
+    # --- Logging ---
     func_name = inspect.currentframe().f_code.co_name
     logger = logging.getLogger(f"{__name__}.{func_name}")
 
-    # --- checks ---
+    # --- Input checks ---
     assert callable(score_func), "score_func must be (y, y_pred_like) -> float"
     assert isinstance(n_estimators_start, int) and n_estimators_start >= 2, "n_estimators_start must be int >= 2"
     assert scale_factor > 1.0, "scale_factor must be > 1"
@@ -569,12 +899,60 @@ def tune_rf_oob_plateau(
 
     if sampler is None:
         sampler = optuna.samplers.TPESampler(seed=random_state)
+
+    pruner = optuna.pruners.MedianPruner(n_warmup_steps=0)
+
     study = optuna.create_study(
-        direction = "maximize" if greater_is_better else "minimize", 
-        sampler = sampler,
-        pruner = optuna.pruners.MedianPruner(n_warmup_steps=0)
+        direction="maximize" if greater_is_better else "minimize",
+        sampler=sampler,
+        pruner=pruner,
     )
 
+    # --- Score func name for logging (lambda-safe) ---
+    score_name = getattr(score_func, "__name__", score_func.__class__.__name__)
+    if score_name == "<lambda>":
+        try:
+            src = inspect.getsource(score_func).strip()
+            src = " ".join(src.split())
+            score_name = src[:120] + ("..." if len(src) > 120 else "")
+        except Exception:
+            pass
+
+    score_repr = repr(score_func)
+    if len(score_repr) > 140:
+        score_repr = score_repr[:137] + "..."
+
+    parts = [
+        "Start tuning",
+        f"method={func_name}",
+        f"problem={problem}",
+        f"score_func={score_name}",
+        f"score_func_repr={score_repr}",
+        f"greater_is_better={greater_is_better}",
+        f"max_features_grid={max_features_grid}",
+        f"max_depth_range={max_depth_range}",
+        f"min_samples_leaf_range={min_samples_leaf_range}",
+        f"min_samples_split_range={min_samples_split_range}",
+        f"tune_criterion={tune_criterion}",
+        f"criterion={criterion}",
+        f"class_weight={class_weight}",
+        f"n_estimators_start={n_estimators_start}",
+        f"scale_factor={scale_factor:.6g}",
+        f"delta={delta:.6g}",
+        f"max_trees={max_trees}",
+        f"sampler={sampler.__class__.__name__}",
+        f"pruner={pruner.__class__.__name__}",
+        f"n_trials={n_trials}",
+        f"n_jobs={n_jobs}",
+        f"random_state={random_state}",
+        f"verbose={verbose}",
+        f"log_file={log_file}", 
+        f"refit={refit}"
+    ]
+
+    _print(" | ".join(parts), v_gate=1)
+
+    # --- Triplet routines ---
     def _valid_triplet(triplet: Tuple[int, int, int], raise_on_error: bool = True) -> bool:
         """Validate [L, B, R] for strict monotonicity and bounds."""
 
@@ -615,25 +993,11 @@ def tune_rf_oob_plateau(
         shift_status = _valid_triplet((L, B, R), raise_on_error=False)
         return (L, B, R) if shift_status else triplet, shift_status
 
+    # --- Initialize triplet ---
     triplet = _make_triplet_from_baseline(n_estimators_start)
+    _print(f"triplet0={triplet}", v_gate=1)
 
-    log_message = (
-        f"Start tuning | problem={problem} | greater_is_better={greater_is_better} | "
-        f"delta={delta:.3g} | scale_factor={scale_factor:.3g} | triplet0={triplet} | "
-    )
-    log_message += f"max_features_grid={max_features_grid} | "
-    log_message += f"max_depth_range={max_depth_range} | "
-    log_message += f"min_samples_leaf_range={min_samples_leaf_range} | "
-    log_message += f"min_samples_split_range={min_samples_split_range} | "
-    log_message += f"tune_criterion={tune_criterion} "
-    if criterion is not None:
-        log_message += f"| criterion={criterion} "
-    if class_weight is not None:
-        log_message += f"| class_weight={class_weight} "
-    if random_state is not None:
-        log_message += f"| random_state={random_state} "
-    _print(log_message, v_gate=1)
-
+    # --- Objective ---
     def objective(trial: optuna.Trial) -> float:
         nonlocal triplet
         trial.set_user_attr("triplet", triplet)
@@ -655,7 +1019,7 @@ def tune_rf_oob_plateau(
             else:
                 raise ValueError("The criterion must be None when tune_criterion is True.")
         elif criterion is not None:
-                params["criterion"] = criterion
+            params["criterion"] = criterion
         # Else default RF criterion is used
 
         if problem == 'reg' and class_weight is not None:
@@ -733,9 +1097,14 @@ def tune_rf_oob_plateau(
                     plateau = abs(scores[2] - scores[1]) / max(abs(scores[1]), eps) <= delta
                     if plateau:
                         # allow pruning ONLY when plateau is already observed on the right
+
+                        # trial.report(scores[1], step=triplet[1])
+                        # if trial.should_prune():
+                        #     _print(f"pruned at trees={triplet[1]}", v_gate=2, step=m)
+                        #     raise optuna.TrialPruned()
                         trial.report(s_j, step=m)
                         if trial.should_prune():
-                            _print(f"pruned at trees={m}", v_gate=1, step=m)
+                            _print(f"pruned at trees={m}", v_gate=2, step=m)
                             raise optuna.TrialPruned()
 
         def _register_shift():
@@ -767,12 +1136,10 @@ def tune_rf_oob_plateau(
             _register_shift()
             raise optuna.TrialPruned()
 
-        return scores[1]
+        return float(scores[1])
 
-    # Reduce Optuna console noise
+    # --- Optuna execution ---
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-    # Optimize
     study.optimize(objective, n_trials=n_trials)
 
     def _is_plateau_trial(trial: optuna.trial.FrozenTrial) -> bool:
@@ -807,7 +1174,10 @@ def tune_rf_oob_plateau(
         score_str = [None if s is None else f"{float(s):.6f}" for s in scores]
         _print(f"BEST scores={score_str}", v_gate)
 
-    completed_trials = [t.state == optuna.trial.TrialState.COMPLETE and t.value is not None for t in study.trials]
+    completed_trials = [
+        t for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE and t.value is not None
+    ]
     if len(completed_trials) == 0:
         _print(f"No completed trials.", v_gate=1)
         return None, None, study, False
@@ -824,7 +1194,7 @@ def tune_rf_oob_plateau(
             best_n_estimators = None
         return None, best_n_estimators, study, False
 
-    # Revisit phase: repeat the current best hyperparameters while triplet moves left
+    # --- Revisit phase: repeat the current best hyperparameters while triplet moves left ---
     triplet = best_trial.user_attrs["triplet_nxt"] # correct triplet after best trial
     best_n_estimators = best_trial.user_attrs["triplet"][1]
     for k in range(n_trials):
@@ -849,18 +1219,25 @@ def tune_rf_oob_plateau(
 
     _print_best_trial(best_trial, v_gate=1)
 
-    # Conditional final refit
+    # --- Final refit ---
     if refit:
-        final_model = (
-            RandomForestClassifier if problem == "clf" else RandomForestRegressor
-        )(
-            n_estimators=best_n_estimators,
+        final_params = dict(best_trial.params)
+        final_params.update(
+            n_estimators=int(best_n_estimators),
             bootstrap=True,
             n_jobs=n_jobs,
             random_state=random_state,
-            **dict(best_trial.params),
-        ).fit(X, y)
+        )
+
+        # Fixed args that are not necessarily in the Optuna search space
+        if (problem == "clf") and (class_weight is not None):
+            final_params["class_weight"] = class_weight
+        if ("criterion" not in final_params) and (criterion is not None):
+            final_params["criterion"] = criterion
+
+        Model = RandomForestClassifier if problem == "clf" else RandomForestRegressor
+        final_model = Model(**final_params).fit(X, y)
     else:
-        final_model = None  # no refit; best hyperparameters are in study.best_trial.params
+        final_model = None  # best hyperparameters are in study.best_trial.params
 
     return final_model, best_n_estimators, study, True
