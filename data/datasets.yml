@@ -202,23 +202,79 @@ datasets:
   #       note         = {Accessed: 2025-10-17}
   #     }
 
-  # gene_expression_cancer_rna_seq:
-  #   name: "Gene Expression Cancer RNA-Seq"
+  gene_expression_cancer_rna_seq:
+    name: "Gene Expression Cancer RNA-Seq"
+    loader: "raw"
+    target: "target"
+    ignored_columns: "Unnamed: 0"
+    bib: |
+      @misc{UCI_Gene_Expression_Cancer_RNA_Seq,
+        author       = {UCI Repository},
+        title        = {Gene Expression Cancer RNA-Seq},
+        year         = {2021},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/dataset/401/gene+expression+cancer+rna+seq},
+        note         = {Accessed: 2025-10-17}
+      }
+    note: |
+      Derived locally: data.csv with labels.csv (class) into a single table ('target' column) 
+      and saved as data/raw/gene_expression_cancer_rna_seq/gene_expression_cancer_rna_seq.zip.
+
+  arcene:
+    name: "Arcene"
+    loader: "raw"
+    target: "target"
+    bib: |
+      @misc{UCI_Arcene,
+        author       = {UCI Repository},
+        title        = {Arcene},
+        year         = {2008},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/dataset/167/arcene},
+        note         = {Accessed: 2026-01-07}
+      }
+    note: |
+      Derived locally: arcene_train.data (100x10000) + arcene_train.labels +
+      arcene_valid.data (100x10000) + arcene_valid.labels were merged into a single table
+      with a 'target' column (200x10001) and saved as data/raw/arcene/arcene.zip.
+
+  dorothea:
+    name: "Dorothea"
+    loader: "raw"
+    target: "target"
+    bib: |
+      @misc{UCI_Dorothea,
+        author       = {UCI Repository},
+        title        = {Dorothea},
+        year         = {2008},
+        howpublished = {UCI Machine Learning Repository},
+        url          = {https://archive.ics.uci.edu/dataset/169/dorothea},
+        note         = {Accessed: 2026-01-07}
+      }
+    note: |
+      Derived locally: dorothea_train.data (800x100000) + dorothea_train.labels +
+      dorothea_valid.data (350x100000) + dorothea_valid.labels were merged into a single table
+      with a 'target' column (1150x100001) and saved as data/raw/dorothea/dorothea.zip.
+
+
+  # gisette:
+  #   name: "Gisette"
   #   loader: "raw"
   #   target: "target"
-  #   ignored_columns: "Unnamed: 0"
   #   bib: |
-  #     @misc{UCI_Gene_Expression_Cancer_RNA_Seq,
+  #     @misc{UCI_Gisette,
   #       author       = {UCI Repository},
-  #       title        = {Gene Expression Cancer RNA-Seq},
-  #       year         = {2021},
+  #       title        = {Gisette},
+  #       year         = {2008},
   #       howpublished = {UCI Machine Learning Repository},
-  #       url          = {https://archive.ics.uci.edu/dataset/401/gene+expression+cancer+rna+seq},
-  #       note         = {Accessed: 2025-10-17}
+  #       url          = {https://archive.ics.uci.edu/dataset/170/gisette},
+  #       note         = {Accessed: 2026-01-07}
   #     }
   #   note: |
-  #     "Derived locally: data.csv with labels.csv (class) into a single table ('target' column) 
-  #     and saved as data/raw/gene_expression_cancer_rna_seq/gene_expression_cancer_rna_seq.zip."
+  #     Derived locally: gisette_train.data (6000x5000) + gisette_train.labels + 
+  #     gisette_valid.data (1000x5000) + gisette_valid.labels into a single table 
+  #     with 'target' column (7000x5001) and saved as data/raw/gisette/gisette.zip.
+
 
   # open_problems_multimodal_cite_cd62L:
   #   name: "Open Problems - Multimodal Single-Cell Integration (CITE-seq)"
@@ -234,6 +290,6 @@ datasets:
   #       note         = {Accessed: 2025-10-17}
   #     }
   #   note: |
-  #     "Derived locally: took train_cite_inputs.h5 (RNA features) and horizontally concatenated 
+  #     Derived locally: took train_cite_inputs.h5 (RNA features) and horizontally concatenated 
   #     the CD62L column from train_cite_targets.h5 as the target; 
-  #     saved as data/raw/open_problems_multimodal_cite_cd62L/open_problems_multimodal_cite_cd62L.parquet."
+  #     saved as data/raw/open_problems_multimodal_cite_cd62L/open_problems_multimodal_cite_cd62L.parquet.
