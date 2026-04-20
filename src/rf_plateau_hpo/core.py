@@ -171,6 +171,13 @@ class RFCWithOOBProba(RandomForestClassifier):
         return out
 
 
+def _derive_trial_seed(base_seed: Optional[int], trial_number: int, salt: int = 0) -> Optional[int]:
+    if base_seed is None:
+        return None
+    ss = np.random.SeedSequence([int(base_seed), int(trial_number), int(salt)])
+    return int(ss.generate_state(1, dtype=np.uint32)[0])
+
+
 @scoped_file_logging_for_param("log_file", level=logging.INFO)
 def tune_rf_oob(
     X: np.ndarray,
@@ -362,12 +369,13 @@ def tune_rf_oob(
 
         _print(f"[trial {trial.number}] params={params}", v_gate=1)
 
+        rf_random_state = _derive_trial_seed(random_state, trial.number, salt=0)
         if problem == 'clf':
             model = RFCWithOOBProba(
                 bootstrap=True,
                 oob_score=True,
                 n_jobs=n_jobs,
-                random_state=random_state,
+                random_state=rf_random_state,
                 class_weight=class_weight,
                 **params,
             )
@@ -377,9 +385,11 @@ def tune_rf_oob(
                 bootstrap=True,
                 oob_score=score_func,
                 n_jobs=n_jobs,
-                random_state=random_state,
+                random_state=rf_random_state,
                 **params,
             )
+        trial.set_user_attr("random_state", rf_random_state)
+        trial.set_user_attr("trees_built", 0)
 
         n_trees = params['n_estimators']
         try:
@@ -431,11 +441,14 @@ def tune_rf_oob(
     # --- Final refit ---
     if refit:
         final_params = dict(best_trial.params)
+
+        rf_random_state = _derive_trial_seed(random_state, best_trial.number, salt=1)
         final_params.update(
             bootstrap=True,
             n_jobs=n_jobs,
-            random_state=random_state,
+            random_state=rf_random_state,
         )
+        study.set_user_attr("BEST_random_state_refit", rf_random_state)
 
         # fixed args that might be outside Optuna search space
         if (problem == "clf") and (class_weight is not None):
@@ -668,6 +681,7 @@ def tune_rf_oob_bohb(
         _print(f"[trial {trial.number}] params={params}", v_gate=1)
 
         # Build a warm-start model grown along ladder
+        rf_random_state = _derive_trial_seed(random_state, trial.number, salt=0)
         if problem == "clf":
             model = RFCWithOOBProba(
                 n_estimators=0,
@@ -675,7 +689,7 @@ def tune_rf_oob_bohb(
                 oob_score=True,
                 warm_start=True,
                 n_jobs=n_jobs,
-                random_state=random_state,
+                random_state=rf_random_state,
                 class_weight=class_weight,
                 **params,
             )
@@ -687,13 +701,15 @@ def tune_rf_oob_bohb(
                 oob_score=score_func,
                 warm_start=True,
                 n_jobs=n_jobs,
-                random_state=random_state,
+                random_state=rf_random_state,
                 **params,
             )
+        trial.set_user_attr("random_state", rf_random_state)
 
         # Grow the forest rung-by-rung and allow pruning at each rung
         scores: List[Optional[float]] = []
         eps = 1e-12
+        trial.set_user_attr("trees_built", 0)
 
         for j, n_trees in enumerate(ladder):
             model.n_estimators = n_trees
@@ -766,14 +782,18 @@ def tune_rf_oob_bohb(
     _print(f"BEST_scores={score_str}", v_gate=1)
 
     # --- Final refit ---
+
     if refit:
         final_params = dict(best_trial.params)
+
+        rf_random_state = _derive_trial_seed(random_state, best_trial.number, salt=1)
         final_params.update(
             n_estimators=best_n_estimators,
             bootstrap=True,
             n_jobs=n_jobs,
-            random_state=random_state,
+            random_state=rf_random_state,
         )
+        study.set_user_attr("BEST_random_state_refit", rf_random_state)
 
         # Fixed args that are not necessarily in the Optuna search space
         if (problem == "clf") and (class_weight is not None):
@@ -1100,6 +1120,7 @@ def tune_rf_oob_plateau(
 
         _print(f"[trial {trial.number}] params={params} | triplet={triplet}", v_gate=1)
 
+        rf_random_state = _derive_trial_seed(random_state, trial.number, salt=0)
         if problem == 'clf':
             model = RFCWithOOBProba(
                 n_estimators=0,
@@ -1107,7 +1128,7 @@ def tune_rf_oob_plateau(
                 bootstrap=True,
                 oob_score=True,
                 n_jobs=n_jobs,
-                random_state=random_state,
+                random_state=rf_random_state,
                 class_weight=class_weight,
                 **params,
             )
@@ -1119,14 +1140,16 @@ def tune_rf_oob_plateau(
                 bootstrap=True,
                 oob_score=score_func,
                 n_jobs=n_jobs,
-                random_state=random_state,
+                random_state=rf_random_state,
                 **params,
             )
+        trial.set_user_attr("random_state", rf_random_state)
 
         scores: List[Optional[float]] = []
         eps = 1e-12
         left_close: bool = False
         plateau: bool = False  # "right-side plateau" flag based on scores[1:]
+        trial.set_user_attr("trees_built", 0)
 
         # Grow across the triplet; DO NOT report/prune at j == 0 (left probe)
         for j, n_trees in enumerate(triplet):
@@ -1303,12 +1326,15 @@ def tune_rf_oob_plateau(
     # --- Final refit ---
     if refit:
         final_params = dict(best_trial.params)
+
+        rf_random_state = _derive_trial_seed(random_state, best_trial.number, salt=1)
         final_params.update(
             n_estimators=int(best_n_estimators),
             bootstrap=True,
             n_jobs=n_jobs,
-            random_state=random_state,
+            random_state=rf_random_state,
         )
+        study.set_user_attr("BEST_random_state_refit", rf_random_state)
 
         # Fixed args that are not necessarily in the Optuna search space
         if (problem == "clf") and (class_weight is not None):
