@@ -94,6 +94,7 @@ RF_HPO_ALGORITHMS = Literal[
     "TPE_Tmin-PLT",
     "TPE",
     "HB",
+    "ES",
     "PLATEAU",
 ]
 DEFAULT_METHOD_GRID = get_args(RF_HPO_ALGORITHMS)
@@ -293,7 +294,7 @@ def run_experiment(
     outdir: Union[str, Path] = "",
     dataset: str = "",
     note: str = ""
-) -> Tuple[Dict[str, Any], Path]:
+): # -> Tuple[Dict[str, Any], Path]:
     """
     Run experiment with specified tuning method and save results.
     
@@ -407,8 +408,7 @@ def run_experiment(
                     RuntimeWarning,
                 )
 
-            log_file = _output_file_name(n_trials=1)
-            _, _, study, _ = tune_rf_oob_bohb(**{**bohb_params, **fixed_params, 'n_trials': 1, 'log_file': log_file})
+            _, _, study, _ = tune_rf_oob_bohb(**{**bohb_params, **fixed_params})
 
         elif method == "TPE_Tmin-PLT":
             # TPE Tmin-PLT: classic HPO search with fixed T=t_min + plateau search 
@@ -424,6 +424,16 @@ def run_experiment(
     elif method == "TPE":
         # TPE: classic search over all hyperparameters
         _, study = tune_rf_oob(**classic_params)
+    elif method == "ES":
+        # ES: early-stoping with delta tolerance
+        if hyperband_reduction_factor >= 2:
+            warnings.warn(
+                f"In '{method}' it is asumed that hyperband_reduction_factor < 2 (no pruning)."
+                f"(hyperband_reduction_factor={hyperband_reduction_factor})",
+                RuntimeWarning,
+            )
+
+        _, _, study, _ = tune_rf_oob_bohb(**bohb_params)
     elif method == "HB":
         # HB: Hyperband-like with n_estimators budgets 
         if hyperband_reduction_factor < 2:
@@ -494,7 +504,7 @@ def run_experiment(
 # ---------- CONFIGURATION GRID GENERATION ---------
 
 def _method_needs_delta(method: RF_HPO_ALGORITHMS) -> bool:
-    return method in ['TPE_Tmin-ES', 'TPE_Tmin-PLT', 'PLATEAU']
+    return method in ['TPE_Tmin-ES', 'ES', 'TPE_Tmin-PLT', 'PLATEAU']
 
 
 def get_experiment_directory(
@@ -546,7 +556,7 @@ def _get_run_experiment_configs(
             for method in method_grid:
                 for scale_factor in scale_factor_grid:
 
-                    ladder = _build_ladder(scale_factor, n_estimators_start, max_trees if method == "TPE_Tmin-ES" else t_max)
+                    ladder = _build_ladder(scale_factor, n_estimators_start, max_trees if method in ["TPE_Tmin-ES", "ES"] else t_max)
                     n_estimators_range = (n_estimators_start, ladder[-1])
                     # n_estimators_range = (100, 2565), ladder = (100, 150, 225, 338, 507, 760, 1140, 1710, 2565) 
                     # are expected when sf=1.5, n_estimators_start=100, t_max=2000
@@ -586,7 +596,7 @@ def _get_run_experiment_configs(
                                     'max_features_grid': ('sqrt',),
                                 }, context="_get_run_experiment_configs")
                                 
-                            if method == 'TPE_Tmin-ES':
+                            if method in ['TPE_Tmin-ES', 'ES']:
                                 cfg = merge_safe(
                                     cfg, {'hyperband_reduction_factor': 1}, 
                                     context="_get_run_experiment_configs"
@@ -633,7 +643,7 @@ def _get_dataset_configs(
     # other baseline algorithms
     method_grid_=tuple(
         meth for meth in [
-            'TPE_Tmin', 'TPE_Tmin-Tmax', 'TPE_Tmin-ES', 'TPE_Tmin-PLT', 'HB'
+            'TPE_Tmin', 'TPE_Tmin-Tmax', 'TPE_Tmin-ES', 'TPE_Tmin-PLT', 'ES', 'HB'
         ] if meth in method_grid 
     )
     if method_grid_ and tune_criterion_grid_ and depth_trees_only_grid_: 
@@ -650,7 +660,7 @@ def _get_dataset_configs(
     # vary sf for ladder-based algorithms (plateau-like + Hyperband)
     method_grid_=tuple(
         meth for meth in [
-            'TPE_Tmin-ES', 'TPE_Tmin-PLT', 'HB', 'PLATEAU'
+            'PLATEAU'
         ] if meth in method_grid 
     )
     if method_grid_ and tune_criterion_grid_ and depth_trees_only_grid_ and len(scale_factor_grid) > 1:
@@ -667,7 +677,7 @@ def _get_dataset_configs(
     # vary delta for plateau-like algorithms
     method_grid_=tuple(
         meth for meth in [
-            'TPE_Tmin-ES', 'TPE_Tmin-PLT', 'PLATEAU'
+            'PLATEAU'
         ] if meth in method_grid 
     )
     if method_grid_ and tune_criterion_grid_ and depth_trees_only_grid_ and len(delta_grid) > 1:
