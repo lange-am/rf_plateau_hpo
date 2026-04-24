@@ -111,38 +111,61 @@ def _filter_kwargs(func: Callable, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in sig.parameters}
 
 
-def _parse_study(study: optuna.Study) -> Dict[str, Any]:
+def parse_study(study: optuna.Study) -> Dict[str, Any]:
     """
     Summarize an Optuna Study primarily using user_attrs produced by our objectives.
     Additionally, include BEST_* fields (trial number, score, params) from `study.best_trial`.
     """
     trials = list(study.trials)
+    n_trials = len(trials)
 
     out = Counter()
-    out["n_trials_total"] = len(trials)
+    out["n_trials_total"] = n_trials
+
+    trees_built = [0]*n_trials
+    B           = [None]*n_trials
+    pruned      = [False]*n_trials
+    shift_left  = [False]*n_trials
+    stay        = [False]*n_trials
+    shift_right = [False]*n_trials
 
     n_trials_with_trees_built = 0
-    for t in trials:
+    for i, t in enumerate(trials):
         ua = t.user_attrs
 
         if "trees_built" in ua:
             out["n_trees_built"] += int(ua["trees_built"])
             n_trials_with_trees_built += 1
+            trees_built[i] = int(ua["trees_built"])
+
+        if "triplet" in ua:
+            B[i] = ua["triplet"][1]
 
         if "pruned" in ua:
             out["n_trials_pruned_"+str(ua["pruned"])] += 1
             out["n_trials_pruned"] += 1
+            pruned[i] = True
 
         if "shift" in ua:
             sh = int(ua["shift"])
             if sh == -1:
                 out["n_trials_shift_left"] += 1
+                shift_left[i] = True
             if sh == 0:
                 out["n_trials_stay"] += 1
+                stay[i] = True
             if sh == 1:
                 out["n_trials_shift_right"] += 1
+                shift_right[i] = True
                 if "pruned" in ua:
                     out["n_trials_shift_right_pruned_"+str(ua["pruned"])] += 1
+
+    out["trees_built"] = trees_built
+    out["B"] = B
+    out["pruned"] = pruned
+    out["shift_left"] = shift_left
+    out["stay"] = stay
+    out["shift_right"] = shift_right
 
     if n_trials_with_trees_built != len(trials):
         warnings.warn(
@@ -180,7 +203,7 @@ def _parse_study(study: optuna.Study) -> Dict[str, Any]:
 
 
 # parse the end-block of the log-file and extract `BEST'-parameters
-def _parse_log_tail(log_file: Union[str, Path]) -> Dict[str, Any]:
+def parse_log_tail(log_file: Union[str, Path]) -> Dict[str, Any]:
     """
     Parse the final contiguous BEST-block from a log file.
 
@@ -238,7 +261,7 @@ def _parse_log_tail(log_file: Union[str, Path]) -> Dict[str, Any]:
     return out
 
 
-def _sumup_common(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
+def sumup_common(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
     """
     Merge two parsed-study dicts.
 
@@ -359,7 +382,7 @@ def run_experiment(
     plateau_params  = _filter_kwargs(tune_rf_oob_plateau, params)
 
     def _parse(study: optuna.Study, log_file: Path) -> Dict[str, Any]:
-        return {**_parse_log_tail(log_file), **_parse_study(study), 'study': study, 'log_file': log_file}
+        return {**parse_log_tail(log_file), **parse_study(study), 'study': study, 'log_file': log_file}
 
     study0, study = None, None
     log_file0 = None
@@ -466,7 +489,7 @@ def run_experiment(
     log_file = log_file.rename(log_file.with_suffix(""))
     out = _parse(study, log_file)
 
-    output = _sumup_common(out0, out)
+    output = sumup_common(out0, out)
     if out0:
         output.update(study0=out0)
     output.update(study=out)
@@ -524,6 +547,18 @@ def get_experiment_directory(
     return outdir / f"n_trials={n_trials}"
 
 
+def build_ladder(scale_factor: float, n_estimators_start: int, t_max: int):
+    ladder = [n_estimators_start]
+    ladder += [int(round(n_estimators_start * scale_factor))]
+    
+    while ladder[-1] < t_max:
+        if ladder[-2] >= ladder[-1]:
+            raise ValueError("n_estimators_ladder must be strictly increasing.")
+
+        ladder.append(int(round(ladder[-1] * scale_factor)))
+    return tuple(ladder)
+
+
 def _get_run_experiment_configs(
     tune_criterion_grid: Sequence[bool] = (True, False),
     depth_trees_only_grid: Sequence[bool] = (True, False),
@@ -539,24 +574,13 @@ def _get_run_experiment_configs(
     dataset: str = "",
     **run_experiment_args,
 ) -> List[Dict[str, Any]]:
-    def _build_ladder(scale_factor: float, n_estimators_start: int, t_max: int):
-        ladder = [n_estimators_start]
-        ladder += [int(round(n_estimators_start * scale_factor))]
-        
-        while ladder[-1] < t_max:
-            if ladder[-2] >= ladder[-1]:
-                raise ValueError("n_estimators_ladder must be strictly increasing.")
-
-            ladder.append(int(round(ladder[-1] * scale_factor)))
-        return tuple(ladder)
-
     configs = []
     for tune_criterion in tune_criterion_grid:
         for depth_trees_only in depth_trees_only_grid:
             for method in method_grid:
                 for scale_factor in scale_factor_grid:
 
-                    ladder = _build_ladder(scale_factor, n_estimators_start, max_trees if method in ["TPE_Tmin-ES", "ES"] else t_max)
+                    ladder = build_ladder(scale_factor, n_estimators_start, max_trees if method in ["TPE_Tmin-ES", "ES"] else t_max)
                     n_estimators_range = (n_estimators_start, ladder[-1])
                     # n_estimators_range = (100, 2565), ladder = (100, 150, 225, 338, 507, 760, 1140, 1710, 2565) 
                     # are expected when sf=1.5, n_estimators_start=100, t_max=2000
