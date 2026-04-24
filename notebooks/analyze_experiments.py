@@ -15,6 +15,8 @@ Key Functions
 - `tab2tex()`                           – Convert a comparison DataFrame to a LaTeX `tabular` environment.
 - `plot_dataset_comparisons()`          – Create grouped bar plots comparing time and tree counts across datasets.
 - `plot_delta_boxplots()`               – Boxplots of best scores versus the plateau tolerance ε (delta).
+- `plot_B_trajectories()`               – Plot trial-wise central triplet size B for a selected run together 
+                                          with the mean ± std trajectory on a logarithmic tree-count scale.
 
 Additional Utilities
 --------------------
@@ -61,7 +63,9 @@ from run_experiments import (
     DEFAULT_N_TRIALS_GRID,
     DEFAULT_DELTA_GRID,
     DEFAULT_SCALE_FACTOR_GRID,
+    parse_study,
     get_experiment_directory,
+    build_ladder,
 )
 
 # ---------- ANALYZE & VISUALIZE EXPERIMENTS ----------
@@ -121,6 +125,17 @@ def read_experiment_results(
         'n': [],
         'p': [],
         'dataset': [],
+        'scale_factor': [],
+        'n_trials': [],
+        'n_estimators_start': [],
+        'max_trees': [],
+    # 
+        'trees_built': [],
+        'B': [],
+        'pruned': [],
+        'shift_left': [],
+        'stay': [],
+        'shift_right': [],
     }
     
     # Load and process experiment files
@@ -139,16 +154,31 @@ def read_experiment_results(
 
             dataset = params_data['dataset']
             n, p = params_data['X.shape']
+            scale_factor = params_in['scale_factor']
+            n_trials = params_in['n_trials']
+            n_estimators_start = params_in['n_estimators_start']
+            max_trees = params_in['max_trees']
 
             for k in res.keys():
                 if k in ['problem', 'greater_is_better']:
                     res[k] += [params_in.get(k)]
-                elif k =='n':
+                elif k == 'n':
                     res[k] += [n]
-                elif k =='p':
+                elif k == 'p':
                     res[k] += [p]
-                elif k =='dataset':
+                elif k == 'dataset':
                     res[k] += [dataset]
+                elif k == 'scale_factor':
+                    res[k] += [scale_factor]
+                elif k == 'n_trials':
+                    res[k] += [n_trials]
+                elif k == 'n_estimators_start':
+                    res[k] += [n_estimators_start]
+                elif k == 'max_trees':
+                    res[k] += [max_trees]
+                elif k == 'B':
+                    study = params_out.get('study', {}).get('study')
+                    res[k] += [parse_study(study).get('B') if study else None]
                 else:
                     value = params_out.get(k) or params_out.get('study', {}).get(k)
                     res[k] += [0 if 'n_' in k and value is None else value]
@@ -158,7 +188,15 @@ def read_experiment_results(
             print(f"Error processing {dill_file}: {e}")
             continue
 
-    COMMOM_PARAMS = ['problem', 'greater_is_better', 'n', 'p', 'dataset']
+    COMMOM_PARAMS = [
+        'problem', 
+        'greater_is_better', 
+        'n', 'p', 'dataset', 
+        'scale_factor', 
+        'n_trials',
+        'n_estimators_start',
+        'max_trees',
+    ]
     for k in COMMOM_PARAMS:
         if len(set(res[k])) > 1:
             raise ValueError(f"All experiments must have the same '{k}'!")
@@ -177,7 +215,7 @@ def read_experiment_results(
 
     res_ = {}
     for k, v in res.items():
-        if k not in ['BEST_params'] + COMMOM_PARAMS:
+        if k not in (['BEST_params'] + COMMOM_PARAMS) or k == 'B':
             try:
                 if k == 'BEST_params_max_features':
                     mf_sqrt = 1/np.sqrt(res['p']) if res['p'] else None
@@ -185,9 +223,18 @@ def read_experiment_results(
                 else:
                     v_ = v
                 if any(x is not None for x in v_):
-                    res_[f'{k}_mean'] = np.nanmean(np.array(v_, dtype=float))
-                    res_[f'{k}_std'] = np.nanstd(np.array(v_, dtype=float))
-                    generate_plots(k, v_)
+                    if isinstance(v_[0], list):
+                        max_len = max(len(row) for row in v_)
+                        arr = np.empty((len(v_), max_len), dtype=type(v_[0][0]))
+                        for i, row in enumerate(v_):
+                            arr[i, :len(row)] = row
+                            arr[i, len(row):] = row[-1]
+                    else:
+                        arr = np.array(v_)
+                    res_[f'{k}_mean'] = np.nanmean(arr, axis=0)
+                    res_[f'{k}_std'] = np.nanstd(arr, axis=0)
+                    if arr.ndim == 1:
+                        generate_plots(k, v_)
             except:
                 continue
     res.update(res_)
@@ -783,9 +830,25 @@ def tab2tex(
     return latex_str
 
 
+def _resolve_legend_anchor_y(
+    axes_top: float,
+    legend_anchor_y: Optional[float],
+    legend_gap: float,
+) -> float:
+    """
+    Resolve legend y-position.
+
+    If legend_anchor_y is explicitly given, use it.
+    Otherwise place the legend `legend_gap` above the subplot area.
+    """
+    if legend_anchor_y is not None:
+        return float(legend_anchor_y)
+    return float(axes_top + legend_gap)
+
+
 def plot_dataset_comparisons(
     dataset_folders: List[str],
-    algorithms: List[str] = ["TPE", "HB", "PLATEAU"],
+    algorithms: List[str] = ["TPE", "HB", "ES", "PLATEAU"],
     tune_criterion: bool = False,
     depth_trees_only: bool = False,
     scale_factor: float = DEFAULT_SCALE_FACTOR_GRID[0],
@@ -793,23 +856,120 @@ def plot_dataset_comparisons(
     n_trials: int = DEFAULT_N_TRIALS_GRID[-1],
     *,
     ncols: Optional[int] = None,
-    bw: float = 0.9,
-    min_w: float = 3.0,
-    min_h: float = 2.5,
-    tight_layout_top: float = 0.9,
-    save_plots: bool = True,
+    bw: float = 0.82,
+    group_gap: float = 1.2,
+    min_w: float = 3.2,
+    min_h: float = 2.6,
     titles: Optional[List[str]] = None,
+    save_plots: bool = True,
+    # --- layout ---
+    layout_left: float = 0.01,
+    layout_right: float = 0.99,
+    layout_bottom: float = 0.01,
+    axes_top: float = 0.9,
+    wspace: float = 0.4,
+    hspace: float = 0.2,
+    # --- legend ---
+    legend_anchor_y: Optional[float] = None,
+    legend_gap: float = 0.1,
+    alg_legend_x: float = 0.36,
+    metric_legend_x: float = 0.78,
 ) -> None:
     """
-    Compare TPE vs HB vs PLATEAU across multiple datasets.
+    Plot grouped comparisons of tuning time and selected tree count across datasets.
 
-    For each dataset, the plot shows:
-      - Total tuning time (left y-axis, seconds)
-      - Selected number of trees T (right y-axis, integer ticks)
+    For each dataset, this function creates one subplot with two bar groups:
+    total tuning time on the left y-axis and the selected number of trees ``T``
+    on the right y-axis. Within each metric group, bars correspond to the
+    requested algorithms, shown in the canonical order ``TPE``, ``HB``, ``ES``,
+    ``PLATEAU`` whenever these algorithms are included.
 
-    Order (left-to-right within each metric group): TPE, HB, PLATEAU.
-    Hatching: TPE='//', HB='\\\\', PLATEAU='' (no hatch).
+    The function reads experiment summaries from directories resolved by
+    ``get_experiment_directory()`` and aggregated by ``read_experiment_results()``.
+    A subplot is hidden if the corresponding experiment directory is missing or
+    if the required metrics cannot be extracted.
+
+    Args:
+        dataset_folders: Dataset-level experiment folders. Each entry is passed
+            to ``get_experiment_directory()`` together with the selected
+            algorithm and configuration flags.
+        algorithms: Algorithms to show. Supported values are ``"TPE"``,
+            ``"HB"``, ``"ES"``, and ``"PLATEAU"``. The displayed order is always
+            canonical, independent of the input order.
+        tune_criterion: Whether to use experiment folders where the Random
+            Forest split criterion was tuned.
+        depth_trees_only: Whether to use experiment folders corresponding to
+            the restricted search space with tree depth and tree count only.
+        scale_factor: Plateau scale factor used to resolve PLATEAU experiment
+            directories.
+        deltas: Plateau tolerance value(s). If a scalar is given, the same
+            tolerance is used for all datasets. If a list/tuple/array is given,
+            ``deltas[i]`` is used for ``dataset_folders[i]``.
+        n_trials: Number of HPO trials used to resolve experiment directories.
+
+        ncols: Number of subplot columns. If ``None``, a nearly square layout is
+            chosen automatically as ``ceil(sqrt(n_datasets))``.
+        bw: Width of each individual bar in data coordinates. Larger values
+            make bars thicker and reduce the visible gap between neighboring
+            algorithms inside the same metric group. This parameter does not
+            change the distance between the time group and the tree-count group;
+            use ``group_gap`` for that.
+        group_gap: Horizontal gap, in data coordinates, between the time bars
+            and the tree-count bars inside each subplot. Increasing this value
+            separates the two metric groups more clearly; decreasing it makes
+            the plot more compact.
+        min_w: Minimum width, in inches, allocated to each subplot column. The
+            total figure width is computed as ``ncols * min_w``. Increase this
+            value if algorithm groups or y-axis labels look compressed.
+        min_h: Minimum height, in inches, allocated to each subplot row. The
+            total figure height is computed as ``nrows * min_h + 0.9``. Increase
+            this value if subplot titles, tick labels, or legends overlap.
+        titles: Optional custom titles for subplots. If provided, its length
+            must match ``dataset_folders``. If omitted, folder names are used.
+        save_plots: Passed to ``read_experiment_results()``. If ``True``, the
+            reader may save its auxiliary diagnostic plots while loading each
+            experiment folder.
+
+        layout_left: Left boundary of the subplot area in normalized figure
+            coordinates, passed to ``fig.subplots_adjust(left=...)``. Values are
+            in the interval ``[0, 1]``; increase this value to reserve more space
+            for left y-axis labels.
+        layout_right: Right boundary of the subplot area in normalized figure
+            coordinates, passed to ``fig.subplots_adjust(right=...)``. Decrease
+            this value to reserve more space for right y-axis labels or external
+            objects.
+        layout_bottom: Bottom boundary of the subplot area in normalized figure
+            coordinates. Increase this value when x-axis labels or annotations
+            at the bottom are clipped.
+        axes_top: Top boundary of the subplot area in normalized figure
+            coordinates. This is also used as the reference level for automatic
+            legend placement. Lower values create more space above the axes.
+        wspace: Horizontal spacing between subplot columns, passed to
+            ``fig.subplots_adjust(wspace=...)``.
+        hspace: Vertical spacing between subplot rows, passed to
+            ``fig.subplots_adjust(hspace=...)``.
+
+        legend_anchor_y: Absolute y-coordinate of the legend anchor in
+            normalized figure coordinates. If ``None``, the legend is placed at
+            ``axes_top + legend_gap``.
+        legend_gap: Vertical offset between ``axes_top`` and the legend anchor
+            when ``legend_anchor_y`` is not provided. Increase this value if the
+            legend overlaps subplot titles.
+        alg_legend_x: Horizontal anchor position of the algorithm legend in
+            normalized figure coordinates.
+        metric_legend_x: Horizontal anchor position of the metric legend in
+            normalized figure coordinates.
+
+    Returns:
+        None. The function creates a Matplotlib figure and displays it with
+        ``plt.show()``.
+
+    Raises:
+        ValueError: If an unknown algorithm is requested or if custom ``titles``
+            do not match the number of datasets.
     """
+    from matplotlib.patches import Patch
+    from matplotlib.ticker import MaxNLocator
 
     # ---------------- helpers ----------------
     def _delta_for_idx(i: int) -> float:
@@ -822,61 +982,84 @@ def plot_dataset_comparisons(
 
     def _clipped_yerr(means, stds):
         """
-        Matplotlib expands ylim if yerr goes below 0.
-        Make yerr asymmetric and clip the lower part so bars never imply negatives.
+        Make yerr asymmetric so that bars never imply negatives.
         """
         means = np.asarray(means, dtype=float)
         stds = np.asarray(stds, dtype=float)
-        lower = np.minimum(stds, means)  # ensures mean - lower >= 0
+        lower = np.minimum(stds, means)
         upper = stds
-        return np.vstack([lower, upper])  # shape (2, n)
+        return np.vstack([lower, upper])
+
+    # ---------------- validation ----------------
+    allowed_algs = {"TPE", "HB", "ES", "PLATEAU"}
+    unknown = [a for a in algorithms if a not in allowed_algs]
+    if unknown:
+        raise ValueError(f"Unknown algorithms: {unknown}")
+
+    if titles is not None and len(titles) != len(dataset_folders):
+        raise ValueError(
+            f"Length of titles ({len(titles)}) must match length of dataset_folders ({len(dataset_folders)})"
+        )
+
+    canonical_order = ["TPE", "HB", "ES", "PLATEAU"]
+    algorithms = [a for a in canonical_order if a in algorithms]
+
+    required_metrics = [
+        "time_total",
+        "time_total_mean",
+        "time_total_std",
+        "BEST_n_estimators",
+        "BEST_n_estimators_mean",
+        "BEST_n_estimators_std",
+    ]
+
+    # ---------------- common style ----------------
+    TITLE_FONT_SIZE = 12
+    AXIS_LABEL_FONT_SIZE = 12
+    TICK_LABEL_FONT_SIZE = 11
+    LEGEND_FONT_SIZE = 11
+
+    alg_colors = {
+        "TPE": "#4C72B0",      # blue
+        "HB": "#DD8452",       # orange
+        "ES": "#8C8C8C",       # gray
+        "PLATEAU": "#55A868",  # green
+    }
+
+    hatch_time = ""
+    hatch_t = "///"
 
     # ---------------- layout ----------------
     n_datasets = len(dataset_folders)
     ncols = ncols or math.ceil(math.sqrt(n_datasets))
     nrows = math.ceil(n_datasets / ncols)
 
-    if titles is not None and len(titles) != n_datasets:
-        raise ValueError(
-            f"Length of titles ({len(titles)}) must match length of dataset_folders ({n_datasets})"
-        )
-
     fig_width = ncols * min_w
-    fig_height = nrows * min_h + 1.0
+    fig_height = nrows * min_h + 0.9
     fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
-    axes_list = axes.ravel() if isinstance(axes, np.ndarray) else [axes]
+    axes_arr = np.atleast_2d(axes) if isinstance(axes, np.ndarray) else np.array([[axes]])
+    if axes_arr.shape != (nrows, ncols):
+        axes_arr = axes_arr.reshape(nrows, ncols)
+    axes_list = axes_arr.ravel().tolist()
 
-    TITLE_FONT_SIZE = 12
-    AXIS_LABEL_FONT_SIZE = 12
-    TICK_LABEL_FONT_SIZE = 11
-    LEGEND_FONT_SIZE = 12
-
-    COLOR_TIME = "#4C72B0"
-    COLOR_T = "#C44E52"
-
-    # visual hatches (requested)
-    hatches = {
-        "TPE": "//",
-        "HB": "\\\\",
-        "PLATEAU": "",
-    }
-
-    required_metrics = [
-        "time_total", "time_total_mean", "time_total_std",
-        "BEST_n_estimators", "BEST_n_estimators_mean", "BEST_n_estimators_std",
+    # ---------------- legend handles ----------------
+    alg_legend_handles = [
+        Patch(facecolor=alg_colors[a], edgecolor="black", label=a) for a in algorithms
     ]
-
-    legend_handles, legend_labels = [], []
+    metric_legend_handles = [
+        Patch(facecolor="white", edgecolor="black", hatch=hatch_time, label="Time"),
+        Patch(facecolor="white", edgecolor="black", hatch=hatch_t, label="$T$"),
+    ]
 
     # ---------------- plot per dataset ----------------
     for idx, dataset_folder in enumerate(dataset_folders):
         ax = axes_list[idx]
         delta_i = _delta_for_idx(idx)
 
-        # Build result paths and load summaries
         results: Dict[str, Dict[str, Any]] = {}
-        try:
-            for alg in algorithms:
+        ok = True
+        for alg in algorithms:
+            try:
                 folder = get_experiment_directory(
                     dataset_folder,
                     tune_criterion,
@@ -887,98 +1070,124 @@ def plot_dataset_comparisons(
                     n_trials=n_trials,
                 )
                 results[alg] = read_experiment_results(folder, save_plots=save_plots)
-        except (FileNotFoundError, KeyError):
-            continue
+            except (FileNotFoundError, KeyError):
+                ok = False
+                break
 
-        if not all(_has_metrics(results[alg], required_metrics) for alg in algorithms):
+        if not ok or not all(_has_metrics(results[alg], required_metrics) for alg in algorithms):
+            ax.set_visible(False)
             continue
 
         time_means = [results[alg]["time_total_mean"] for alg in algorithms]
-        time_stds  = [results[alg]["time_total_std"]  for alg in algorithms]
+        time_stds = [results[alg]["time_total_std"] for alg in algorithms]
 
         t_means = [results[alg]["BEST_n_estimators_mean"] for alg in algorithms]
-        t_stds  = [results[alg]["BEST_n_estimators_std"]  for alg in algorithms]
+        t_stds = [results[alg]["BEST_n_estimators_std"] for alg in algorithms]
 
-        # x positions: 3 bars for time, gap, 3 bars for T
-        x_time = list(range(len(algorithms)))
-        x_t    = np.array(x_time) + 3.5
+        n_algs = len(algorithms)
+
+        x_time = np.arange(n_algs, dtype=float)
+        x_t = x_time + n_algs + group_gap
 
         # ---- Time bars (left axis)
-        bars_time = ax.bar(
-            x_time,
-            time_means,
-            yerr=_clipped_yerr(time_means, time_stds),
-            width=bw,
-            color=COLOR_TIME,
-            hatch=[hatches[a] for a in algorithms],
-            edgecolor="black",
-            linewidth=0.8,
-        )
+        for i_alg, alg in enumerate(algorithms):
+            ax.bar(
+                x_time[i_alg],
+                time_means[i_alg],
+                yerr=_clipped_yerr([time_means[i_alg]], [time_stds[i_alg]]),
+                width=bw,
+                color=alg_colors[alg],
+                hatch=hatch_time,
+                edgecolor="black",
+                linewidth=0.8,
+                zorder=3,
+            )
+
         ax.set_ylim(bottom=0)
         ax.set_ylabel("Time (s)", fontsize=AXIS_LABEL_FONT_SIZE)
 
         # ---- T bars (right axis)
         ax2 = ax.twinx()
-        bars_t = ax2.bar(
-            x_t,
-            t_means,
-            yerr=_clipped_yerr(t_means, t_stds),
-            width=bw,
-            color=COLOR_T,
-            hatch=[hatches[a] for a in algorithms],
-            edgecolor="black",
-            linewidth=0.8,
-        )
+        for i_alg, alg in enumerate(algorithms):
+            ax2.bar(
+                x_t[i_alg],
+                t_means[i_alg],
+                yerr=_clipped_yerr([t_means[i_alg]], [t_stds[i_alg]]),
+                width=bw,
+                color=alg_colors[alg],
+                hatch=hatch_t,
+                edgecolor="black",
+                linewidth=0.8,
+                zorder=3,
+            )
+
         ax2.set_ylim(bottom=0)
         ax2.set_ylabel("$T$", fontsize=AXIS_LABEL_FONT_SIZE)
-        ax2.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+        ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-        # ---- Title
-        if titles is None:
-            title = Path(dataset_folder).name
-        else:
-            title = titles[idx]
+        ax.set_xticks([])
+        ax.tick_params(axis="y", which="major", labelsize=TICK_LABEL_FONT_SIZE)
+        ax2.tick_params(axis="y", which="major", labelsize=TICK_LABEL_FONT_SIZE)
+        ax.tick_params(axis="x", which="major", labelsize=TICK_LABEL_FONT_SIZE)
+
+        title = Path(dataset_folder).name if titles is None else titles[idx]
         ax.set_title(title, fontsize=TITLE_FONT_SIZE)
 
-        # ---- cosmetics
-        ax.set_xticks([])
-        ax.grid(False)
+        ax.grid(True, axis="y", alpha=0.25, zorder=0)
         ax2.grid(False)
 
-        ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONT_SIZE)
-        ax2.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONT_SIZE)
+        ax.set_xlim(-0.8, x_t[-1] + 0.8)
 
-        # ---- Legend (build once)
-        if not legend_handles:
-            legend_items = []
-            for i, alg in enumerate(algorithms):
-                legend_items.append((bars_time[i], f"Time {alg}"))
-                legend_items.append((bars_t[i], f"$T$ {alg}"))
-            legend_handles, legend_labels = zip(*legend_items)
-
-    # Remove unused axes
+    # ---------------- hide unused axes ----------------
     for j in range(len(dataset_folders), len(axes_list)):
-        fig.delaxes(axes_list[j])
+        axes_list[j].set_visible(False)
 
-    # Figure legend
-    if legend_handles:
-        fig.legend(
-            legend_handles,
-            legend_labels,
-            loc="upper center",
-            ncol=len(algorithms),
-            fontsize=LEGEND_FONT_SIZE,
-            frameon=False,
-            bbox_to_anchor=(0.5, 1.02),
-        )
+    legend_y = _resolve_legend_anchor_y(
+        axes_top=axes_top,
+        legend_anchor_y=legend_anchor_y,
+        legend_gap=legend_gap,
+    )
 
-    fig.tight_layout(rect=[0, 0, 1, tight_layout_top])
+    # ---------------- legends ----------------
+    leg1 = fig.legend(
+        handles=alg_legend_handles,
+        loc="upper center",
+        ncol=len(algorithms),
+        fontsize=LEGEND_FONT_SIZE,
+        frameon=False,
+        bbox_to_anchor=(alg_legend_x, legend_y),
+        title="Algorithm",
+        title_fontsize=LEGEND_FONT_SIZE,
+    )
+    fig.add_artist(leg1)
+
+    fig.legend(
+        handles=metric_legend_handles,
+        loc="upper center",
+        ncol=2,
+        fontsize=LEGEND_FONT_SIZE,
+        frameon=False,
+        bbox_to_anchor=(metric_legend_x, legend_y),
+        title="Metric",
+        title_fontsize=LEGEND_FONT_SIZE,
+    )
+
+    # ---------------- unified layout ----------------
+    fig.subplots_adjust(
+        left=layout_left,
+        right=layout_right,
+        bottom=layout_bottom,
+        top=axes_top,
+        wspace=wspace,
+        hspace=hspace,
+    )
+
     plt.show()
 
 
 def plot_delta_boxplots(
     dataset_folders: List[str],
-    deltas_grid,  # Sequence[float] OR Sequence[Sequence[float]]
+    deltas_grid,
     *,
     tune_criterion: bool = False,
     depth_trees_only: bool = False,
@@ -991,31 +1200,98 @@ def plot_delta_boxplots(
     show_means: bool = True,
     mean_marker: str = "o",
     mean_marker_size: int = 18,
-    save_path: Optional[Union[str, Path]] = None,
-    dpi: int = 200,
     titles: Optional[List[str]] = None,
     ylabels: Optional[List[str]] = None,
     save_plots_from_reader: bool = False,
+    save_path: Optional[Union[str, Path]] = None,
+    dpi: int = 200,
+    # --- layout ---
+    layout_left: float = 0.01,
+    layout_right: float = 0.99,
+    layout_bottom: float = 0.01,
+    axes_top: float = 0.90,
+    wspace: float = 0.32,
+    hspace: float = 0.40,
 ) -> None:
     """
-    Boxplots of BEST_score versus epsilon (delta), per dataset.
+    Plot boxplots of best scores as a function of the plateau tolerance.
 
-    deltas_grid:
-      - either a single list of deltas (applied to all datasets),
-      - or a list-of-lists: deltas_grid[i] is used for dataset_folders[i].
+    For each dataset, this function creates one subplot with boxplots of
+    ``BEST_score`` grouped by the PLATEAU tolerance ``epsilon`` (called
+    ``delta`` in the experiment directory structure). Each box summarizes the
+    distribution of best scores over repeated runs for a fixed tolerance value.
+    Optionally, the empirical mean score for each tolerance is overlaid as a
+    marker.
 
-    X-axis: delta values (epsilon)
-    Y-axis: BEST_score distribution across runs (e.g., 20 seeds)
-    Also overlays the mean BEST_score for each delta (optional).
+    The x-axis is formatted for the common tolerance grid
+    ``1e-3, 3e-3, 5e-3, ...`` by showing integer multipliers on the ticks and
+    placing a shared ``x 10^{-3}`` multiplier annotation near the lower-right
+    side of each subplot.
 
-    Parameters
-    ----------
-    ylabels : Optional[List[str]], default None
-        If provided, must have the same length as dataset_folders.
-        Each element becomes the y-axis label for the corresponding subplot.
-        If None, the default label "Best score" is used for all subplots.
+    Args:
+        dataset_folders: Dataset-level experiment folders. For each dataset and
+            each tolerance value, the PLATEAU experiment directory is resolved
+            using ``get_experiment_directory()``.
+        deltas_grid: Plateau tolerance values. This can be either a single list
+            shared by all datasets, e.g. ``[1e-3, 3e-3, 5e-3]``, or a list of
+            lists where ``deltas_grid[i]`` contains the tolerance values for
+            ``dataset_folders[i]``.
+        tune_criterion: Whether to use experiment folders where the Random
+            Forest split criterion was tuned.
+        depth_trees_only: Whether to use experiment folders corresponding to
+            the restricted search space with tree depth and tree count only.
+        scale_factor: Plateau scale factor used to resolve experiment
+            directories.
+        n_trials: Number of HPO trials used to resolve experiment directories.
+
+        ncols: Number of subplot columns. If ``None``, a nearly square layout is
+            chosen automatically as ``ceil(sqrt(n_datasets))``.
+        min_w: Minimum width, in inches, allocated to each subplot column. The
+            total figure width is computed as ``ncols * min_w``.
+        min_h: Minimum height, in inches, allocated to each subplot row. The
+            total figure height is computed as ``nrows * min_h + 0.8``.
+        box_width: Width of each boxplot in data coordinates. Smaller values
+            create more horizontal whitespace around boxes; larger values make
+            boxes visually heavier.
+        show_means: Whether to overlay the empirical mean score for each
+            tolerance value.
+        mean_marker: Matplotlib marker style used for the overlaid means.
+        mean_marker_size: Marker size used for the overlaid means.
+        titles: Optional custom subplot titles. If provided, its length must
+            match ``dataset_folders``. If omitted, folder names are used.
+        ylabels: Optional custom y-axis labels, one per dataset. If omitted,
+            ``"Best score"`` is used for all subplots.
+        save_plots_from_reader: Passed to ``read_experiment_results()``. If
+            ``True``, the reader may save its auxiliary diagnostic plots while
+            loading each experiment folder.
+        save_path: Optional path where the final figure is saved. Parent
+            directories are created automatically.
+        dpi: Resolution used when saving the figure.
+
+        layout_left: Left boundary of the subplot area in normalized figure
+            coordinates, passed to ``fig.subplots_adjust(left=...)``. Increase
+            this value to reserve more space for y-axis labels.
+        layout_right: Right boundary of the subplot area in normalized figure
+            coordinates, passed to ``fig.subplots_adjust(right=...)``.
+        layout_bottom: Bottom boundary of the subplot area in normalized figure
+            coordinates. Increase this value if the x-axis label or the
+            ``x 10^{-3}`` multiplier annotation is clipped.
+        axes_top: Top boundary of the subplot area in normalized figure
+            coordinates. Lower values reserve more space above the subplots.
+        wspace: Horizontal spacing between subplot columns, passed to
+            ``fig.subplots_adjust(wspace=...)``.
+        hspace: Vertical spacing between subplot rows, passed to
+            ``fig.subplots_adjust(hspace=...)``.
+
+    Returns:
+        None. The function creates a Matplotlib figure, optionally saves it, and
+        displays it with ``plt.show()``.
+
+    Raises:
+        ValueError: If ``deltas_grid`` is empty, if per-dataset tolerance lists
+            do not match the number of datasets, or if custom ``titles`` or
+            ``ylabels`` have inconsistent lengths.
     """
-
     if titles is not None and len(titles) != len(dataset_folders):
         raise ValueError("If provided, titles must have the same length as dataset_folders.")
     if ylabels is not None and len(ylabels) != len(dataset_folders):
@@ -1023,13 +1299,10 @@ def plot_delta_boxplots(
 
     n_datasets = len(dataset_folders)
 
-    # Normalize deltas_grid to list-of-lists
-    # Accept: deltas_grid = [1e-4, 1e-3, ...]  OR  [[...], [...], ...]
     if len(deltas_grid) == 0:
         raise ValueError("deltas_grid must be non-empty.")
 
     if isinstance(deltas_grid[0], (list, tuple, np.ndarray)):
-        # list-of-lists case
         if len(deltas_grid) != n_datasets:
             raise ValueError(
                 f"deltas_grid has length {len(deltas_grid)}, but dataset_folders has length {n_datasets}. "
@@ -1037,29 +1310,23 @@ def plot_delta_boxplots(
             )
         deltas_per_dataset = [list(map(float, ds_deltas)) for ds_deltas in deltas_grid]
     else:
-        # single list applied to all datasets
         shared = list(map(float, deltas_grid))
         deltas_per_dataset = [shared for _ in range(n_datasets)]
 
-    # Layout
     ncols = ncols or math.ceil(math.sqrt(n_datasets))
     nrows = math.ceil(n_datasets / ncols)
 
     fig_width = ncols * min_w
     fig_height = nrows * min_h + 0.8
     fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
-    axes_list = axes.ravel() if isinstance(axes, np.ndarray) else [axes]
+    axes_arr = np.atleast_2d(axes) if isinstance(axes, np.ndarray) else np.array([[axes]])
+    if axes_arr.shape != (nrows, ncols):
+        axes_arr = axes_arr.reshape(nrows, ncols)
+    axes_list = axes_arr.ravel().tolist()
 
-    def _fmt_delta(x: float) -> str:
-        # Pretty labels like 1e-3, 3e-4, ...
-        if x == 0:
-            return "0"
-        exp = int(np.floor(np.log10(abs(x))))
-        mant = x / (10 ** exp)
-        mant_rounded = np.round(mant, 1)
-        if mant_rounded == 1.0:
-            return f"$10^{{{exp}}}$"
-        return f"${mant_rounded}\\times 10^{{{exp}}}$"
+    TITLE_FONT_SIZE = 12
+    AXIS_LABEL_FONT_SIZE = 12
+    TICK_LABEL_FONT_SIZE = 11
 
     for i, dataset_folder in enumerate(dataset_folders):
         ax = axes_list[i]
@@ -1067,7 +1334,6 @@ def plot_delta_boxplots(
 
         scores_by_delta: List[List[float]] = []
         means: List[float] = []
-        delta_labels: List[str] = []
 
         for d in ds_deltas:
             path = get_experiment_directory(
@@ -1095,16 +1361,14 @@ def plot_delta_boxplots(
 
             scores_by_delta.append(vals)
             means.append(float(np.mean(vals)))
-            delta_labels.append(_fmt_delta(float(d)))
 
         if len(scores_by_delta) == 0:
-            ax.set_title(Path(dataset_folder).name if titles is None else titles[i])
+            ax.set_title(Path(dataset_folder).name if titles is None else titles[i], fontsize=TITLE_FONT_SIZE)
             ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
             ax.set_xticks([])
             ax.set_yticks([])
-            # Set ylabel even for empty subplot if ylabels provided
             if ylabels is not None:
-                ax.set_ylabel(ylabels[i])
+                ax.set_ylabel(ylabels[i], fontsize=AXIS_LABEL_FONT_SIZE)
             continue
 
         positions = np.arange(1, len(scores_by_delta) + 1, dtype=float)
@@ -1121,7 +1385,6 @@ def plot_delta_boxplots(
             boxprops=dict(linewidth=1.0),
         )
 
-        # Keep boxes unfilled (clean) but visible
         for b in bp["boxes"]:
             b.set_facecolor("white")
 
@@ -1135,35 +1398,525 @@ def plot_delta_boxplots(
             )
 
         scale = 1e-3
-        multipliers = [int(round(d / scale)) for d in ds_deltas]
+        multipliers = [int(round(d / scale)) for d in ds_deltas[:len(scores_by_delta)]]
         ax.set_xticks(positions)
-        ax.set_xticklabels([str(m) for m in multipliers])
+        ax.set_xticklabels([str(m) for m in multipliers], fontsize=TICK_LABEL_FONT_SIZE)
 
-        # mapping text: "1→1e-3, 2→3e-3, ..."
-        mapping = ", ".join([f"{i}→{lbl}" for i, lbl in enumerate(delta_labels, start=1)])
-
-        # place mapping once per subplot (right side)
         ax.text(
-            0.95, -0.25, r'$\times 10^{-3}$',
+            0.95, -0.18, r'$\times 10^{-3}$',
             transform=ax.transAxes,
             va="bottom", ha="left",
-            fontsize=9
-        )        
-        ax.set_xlabel(r"$\varepsilon$")
-        # Set ylabel: custom if provided, else default
-        if ylabels is not None:
-            ax.set_ylabel(ylabels[i])
-        else:
-            ax.set_ylabel("Best score")
+            fontsize=TICK_LABEL_FONT_SIZE
+        )
 
-        ax.set_title(Path(dataset_folder).name if titles is None else titles[i])
+        ax.set_xlabel(r"$\varepsilon$", fontsize=AXIS_LABEL_FONT_SIZE)
+
+        if ylabels is not None:
+            ax.set_ylabel(ylabels[i], fontsize=AXIS_LABEL_FONT_SIZE)
+        else:
+            ax.set_ylabel("Best score", fontsize=AXIS_LABEL_FONT_SIZE)
+
+        ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONT_SIZE)
+
+        ax.set_title(Path(dataset_folder).name if titles is None else titles[i], fontsize=TITLE_FONT_SIZE)
         ax.grid(True, axis="y", alpha=0.25)
 
-    # Remove unused axes
     for j in range(len(dataset_folders), len(axes_list)):
-        fig.delaxes(axes_list[j])
+        axes_list[j].set_visible(False)
 
-    fig.tight_layout()
+    fig.subplots_adjust(
+        left=layout_left,
+        right=layout_right,
+        bottom=layout_bottom,
+        top=axes_top,
+        wspace=wspace,
+        hspace=hspace,
+    )
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, bbox_inches="tight", dpi=dpi)
+
+    plt.show()
+
+
+def _select_even_ticks_from_levels(levels, max_ticks: int = 10):
+    """
+    Select at most `max_ticks` labels from a sorted array of true B-levels,
+    using a constant integer step in level-index coordinates.
+
+    The highest level is always included. The number of shown ticks may be
+    smaller than `max_ticks`.
+    """
+    levels = np.asarray(levels)
+    n = len(levels)
+
+    if n == 0:
+        return np.array([], dtype=int), []
+
+    if max_ticks <= 0:
+        raise ValueError("max_ticks must be positive.")
+
+    step = max(1, int(np.ceil(n / max_ticks)))
+    offset = (n - 1) % step
+    idx = np.arange(offset, n, step, dtype=int)
+
+    return idx, [str(int(levels[i])) for i in idx]
+
+
+def _choose_xticks(n_trials_total: int, max_ticks: int) -> np.ndarray:
+    """
+    Choose trial ticks in 1..n_trials_total with a constant integer step.
+
+    The last tick n_trials_total is always included. The number of shown ticks
+    may be smaller than `max_ticks`.
+    """
+    if n_trials_total <= 0:
+        return np.array([], dtype=int)
+
+    if max_ticks <= 0:
+        raise ValueError("max_ticks must be positive.")
+
+    step = max(1, int(np.ceil(n_trials_total / max_ticks)))
+    offset = (n_trials_total - 1) % step
+    return np.arange(offset + 1, n_trials_total + 1, step, dtype=int)
+
+
+def _build_nominal_B_levels(
+    scale_factor: float,
+    n_estimators_start: int,
+    max_trees: int,
+    min_observed: int,
+    max_observed: int,
+) -> np.ndarray:
+    """
+    Build the nominal B-grid around n_estimators_start.
+
+    Upward levels are built using build_ladder(scale_factor, n_estimators_start, max_trees),
+    then truncated so that the highest retained level is at most one ladder step above
+    the observed maximum.
+
+    Downward levels are generated by repeated division by scale_factor (with rounding)
+    until the minimum observed value is covered.
+    """
+    if min_observed <= 0 or max_observed <= 0:
+        raise ValueError("Observed B values must be positive.")
+
+    up = np.asarray(build_ladder(scale_factor, n_estimators_start, max_trees), dtype=int)
+
+    cutoff = int(np.searchsorted(up, max_observed, side="right"))
+    cutoff = min(cutoff, len(up) - 1)
+    up = up[: cutoff + 1]
+
+    down = [int(n_estimators_start)]
+    while down[-1] > min_observed:
+        nxt = int(round(down[-1] / scale_factor))
+        if nxt >= down[-1] or nxt < 1:
+            break
+        down.append(nxt)
+
+    down = np.asarray(sorted(set(down)), dtype=int)
+    levels = np.asarray(sorted(set(down.tolist() + up.tolist())), dtype=int)
+    return levels
+
+
+def plot_B_trajectories(
+    dataset_folders: List[str],
+    deltas: Union[float, List[float]] = DEFAULT_DELTA_GRID[0],
+    *,
+    tune_criterion: bool = False,
+    depth_trees_only: bool = False,
+    scale_factor: float = DEFAULT_SCALE_FACTOR_GRID[0],
+    n_trials: int = DEFAULT_N_TRIALS_GRID[-1],
+    run_idx: int = 0,
+    ncols: Optional[int] = None,
+    min_w: float = 3.2,
+    min_h: float = 2.6,
+    titles: Optional[List[str]] = None,
+    save_path: Optional[Union[str, Path]] = None,
+    dpi: int = 200,
+    save_plots_from_reader: bool = False,
+    cmap: str = "Blues",
+    show_colorbar: bool = True,
+    show_mean_path: bool = True,
+    line_color: str = "black",
+    mean_color: str = "orange",
+    max_yticks: int = 10,
+    max_xticks: int = 7,
+    # --- layout ---
+    layout_left: float = 0.01,
+    layout_right: float = 0.99,
+    layout_bottom: float = 0.01,
+    axes_top: float = 0.84,
+    wspace: float = 0.32,
+    hspace: float = 0.40,
+    # --- legend ---
+    legend_anchor_y: Optional[float] = None,
+    legend_gap: float = 0.04,
+    # --- colorbar geometry ---
+    cbar_gap: float = 0.010,
+    cbar_width: float = 0.012,
+) -> None:
+    """
+    Plot trial-wise trajectories of the central triplet point ``B``.
+
+    For each dataset, this function visualizes the evolution of the central
+    tree count ``B`` in the PLATEAU algorithm. The selected run is shown as a
+    line trajectory, and the background heatmap shows the empirical probability
+    of observing each nominal ``B`` level at each trial across all available
+    repeated runs.
+
+    The vertical axis is not a continuous numeric tree-count axis. Instead, it
+    is an index over the nominal geometric grid generated from
+    ``n_estimators_start``, ``scale_factor``, and ``max_trees``. Tick labels are
+    then replaced by the corresponding actual tree-count values. This keeps the
+    cells square and makes geometric movements of the triplet visually clear.
+
+    Args:
+        dataset_folders: Dataset-level experiment folders. For each dataset,
+            the corresponding PLATEAU experiment directory is resolved using
+            ``get_experiment_directory()``.
+        deltas: Plateau tolerance value(s). If a scalar is given, the same
+            tolerance is used for all datasets. If a list/tuple/array is given,
+            ``deltas[i]`` is used for ``dataset_folders[i]``.
+        tune_criterion: Whether to use experiment folders where the Random
+            Forest split criterion was tuned.
+        depth_trees_only: Whether to use experiment folders corresponding to
+            the restricted search space with tree depth and tree count only.
+        scale_factor: Plateau scale factor used to resolve experiment
+            directories.
+        n_trials: Number of HPO trials used to resolve experiment directories.
+        run_idx: Index of the repeated run whose individual trajectory is drawn
+            on top of the probability map.
+
+        ncols: Number of subplot columns. If ``None``, a nearly square layout is
+            chosen automatically as ``ceil(sqrt(n_datasets))``.
+        min_w: Minimum width, in inches, allocated to each subplot column. The
+            total figure width is computed as ``ncols * min_w``.
+        min_h: Minimum height, in inches, allocated to each subplot row. The
+            total figure height is computed as ``nrows * min_h + 0.9``.
+        titles: Optional custom subplot titles. If provided, its length must
+            match ``dataset_folders``. If omitted, folder names are used.
+        save_path: Optional path where the final figure is saved. Parent
+            directories are created automatically.
+        dpi: Resolution used when saving the figure.
+        save_plots_from_reader: Passed to ``read_experiment_results()``. If
+            ``True``, the reader may save its auxiliary diagnostic plots while
+            loading each experiment folder.
+        cmap: Matplotlib colormap name used for the background probability map.
+        show_colorbar: Whether to draw one shared probability colorbar per
+            subplot row.
+        show_mean_path: Whether to overlay the across-run mean trajectory in
+            nominal grid-index coordinates.
+        line_color: Color of the selected individual run trajectory.
+        mean_color: Color of the across-run mean trajectory.
+        max_yticks: Maximum number of nominal ``B`` levels shown as y-axis tick
+            labels. The actual number may be smaller because ticks are selected
+            on the discrete level grid.
+        max_xticks: Maximum number of trial ticks shown on the x-axis. The final
+            trial is always included when possible.
+
+        layout_left: Left boundary of the subplot area in normalized figure
+            coordinates, passed to ``fig.subplots_adjust(left=...)``. Increase
+            this value to reserve more space for y-axis labels.
+        layout_right: Right boundary of the subplot area in normalized figure
+            coordinates. Decrease this value to reserve space for row-level
+            colorbars on the right.
+        layout_bottom: Bottom boundary of the subplot area in normalized figure
+            coordinates. Increase this value if x-axis labels are clipped.
+        axes_top: Top boundary of the subplot area in normalized figure
+            coordinates. This is also used as the reference level for automatic
+            legend placement.
+        wspace: Horizontal spacing between subplot columns, passed to
+            ``fig.subplots_adjust(wspace=...)``.
+        hspace: Vertical spacing between subplot rows, passed to
+            ``fig.subplots_adjust(hspace=...)``.
+
+        legend_anchor_y: Absolute y-coordinate of the legend anchor in
+            normalized figure coordinates. If ``None``, the legend is placed at
+            ``axes_top + legend_gap``.
+        legend_gap: Vertical offset between ``axes_top`` and the legend anchor
+            when ``legend_anchor_y`` is not provided. Increase this value if the
+            legend overlaps subplot titles.
+
+        cbar_gap: Horizontal gap, in normalized figure coordinates, between the
+            right edge of each visible subplot row and the corresponding
+            colorbar.
+        cbar_width: Width of each row-level colorbar in normalized figure
+            coordinates.
+
+    Returns:
+        None. The function creates a Matplotlib figure, optionally saves it, and
+        displays it with ``plt.show()``.
+
+    Raises:
+        ValueError: If custom ``titles`` do not match the number of datasets, if
+            ``run_idx`` is outside the available range for a dataset, or if the
+            parsed experiment results do not contain the metadata required to
+            reconstruct the nominal ``B`` grid.
+    """
+    from matplotlib.lines import Line2D
+    from matplotlib.colors import Normalize
+    from matplotlib.cm import ScalarMappable
+
+    def _delta_for_idx(i: int) -> float:
+        if isinstance(deltas, (list, tuple, np.ndarray)):
+            return float(deltas[i])
+        return float(deltas)
+
+    def _nearest_level_idx(val: float, levels: np.ndarray) -> int:
+        return int(np.argmin(np.abs(levels - float(val))))
+
+    if titles is not None and len(titles) != len(dataset_folders):
+        raise ValueError(
+            f"Length of titles ({len(titles)}) must match length of dataset_folders ({len(dataset_folders)})"
+        )
+
+    n_datasets = len(dataset_folders)
+    ncols = ncols or math.ceil(math.sqrt(n_datasets))
+    nrows = math.ceil(n_datasets / ncols)
+
+    fig_width = ncols * min_w
+    fig_height = nrows * min_h + 0.9
+    fig, axes = plt.subplots(nrows, ncols, figsize=(fig_width, fig_height))
+    axes_arr = np.atleast_2d(axes) if isinstance(axes, np.ndarray) else np.array([[axes]])
+    if axes_arr.shape != (nrows, ncols):
+        axes_arr = axes_arr.reshape(nrows, ncols)
+    axes_list = axes_arr.ravel().tolist()
+
+    TITLE_FONT_SIZE = 12
+    AXIS_LABEL_FONT_SIZE = 12
+    TICK_LABEL_FONT_SIZE = 11
+    LEGEND_FONT_SIZE = 11
+
+    norm = Normalize(vmin=0.0, vmax=1.0)
+    row_visible_axes = [[] for _ in range(nrows)]
+
+    for i, dataset_folder in enumerate(dataset_folders):
+        ax = axes_list[i]
+        row_idx = i // ncols
+        delta_i = _delta_for_idx(i)
+
+        path = get_experiment_directory(
+            dataset_folder,
+            tune_criterion,
+            depth_trees_only,
+            method="PLATEAU",
+            scale_factor=scale_factor,
+            delta=delta_i,
+            n_trials=n_trials,
+        )
+
+        try:
+            res = read_experiment_results(path, save_plots=save_plots_from_reader)
+        except (FileNotFoundError, KeyError):
+            ax.set_visible(False)
+            continue
+
+        B_all = res.get("B")
+        n_trials_total = res.get("n_trials")
+        n_estimators_start_ = res.get("n_estimators_start")
+        max_trees_ = res.get("max_trees")
+        scale_factor_ = res.get("scale_factor")
+
+        if B_all is None or len(B_all) == 0:
+            ax.set_title(Path(dataset_folder).name if titles is None else titles[i], fontsize=TITLE_FONT_SIZE)
+            ax.text(0.5, 0.5, "No B data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+
+        if not (0 <= run_idx < len(B_all)):
+            raise ValueError(
+                f"run_idx={run_idx} is out of range for dataset '{dataset_folder}'. "
+                f"Available runs: 0..{len(B_all)-1}"
+            )
+
+        B_rows = []
+        max_len = 0
+        positive_vals = []
+
+        for row in B_all:
+            if row is None:
+                continue
+            arr = np.asarray(row, dtype=float)
+            arr = arr[np.isfinite(arr)]
+            if arr.size == 0:
+                continue
+            B_rows.append(arr)
+            max_len = max(max_len, len(arr))
+            positive_vals.extend([int(v) for v in arr if v > 0])
+
+        if len(B_rows) == 0 or max_len == 0 or len(positive_vals) == 0:
+            ax.set_title(Path(dataset_folder).name if titles is None else titles[i], fontsize=TITLE_FONT_SIZE)
+            ax.text(0.5, 0.5, "Empty B trajectories", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+
+        if n_trials_total is None:
+            n_trials_total = max_len
+        else:
+            n_trials_total = int(n_trials_total)
+
+        if n_estimators_start_ is None or max_trees_ is None or scale_factor_ is None:
+            raise ValueError("Missing n_estimators_start / max_trees / scale_factor in parsed results.")
+
+        min_observed = int(min(positive_vals))
+        max_observed = int(max(positive_vals))
+
+        levels = _build_nominal_B_levels(
+            scale_factor=float(scale_factor_),
+            n_estimators_start=int(n_estimators_start_),
+            max_trees=int(max_trees_),
+            min_observed=min_observed,
+            max_observed=max_observed,
+        )
+        n_levels = len(levels)
+
+        prob = np.zeros((n_levels, n_trials_total), dtype=float)
+        counts = np.zeros(n_trials_total, dtype=float)
+
+        # --- trajectories converted to level indices ---
+        idx_mat = np.full((len(B_rows), n_trials_total), np.nan, dtype=float)
+
+        for r, row in enumerate(B_rows):
+            L = min(len(row), n_trials_total)
+            for t in range(L):
+                val = row[t]
+                if np.isfinite(val) and val > 0:
+                    idx = _nearest_level_idx(val, levels)
+                    idx_mat[r, t] = idx
+                    prob[idx, t] += 1.0
+                    counts[t] += 1.0
+
+        valid = counts > 0
+        prob[:, valid] /= counts[valid][None, :]
+
+        # --- selected run path in level-index coordinates ---
+        B_sel = np.asarray(B_all[run_idx], dtype=float)
+        sel_mask = np.isfinite(B_sel) & (B_sel > 0)
+        B_sel = B_sel[sel_mask]
+        L_sel = min(len(B_sel), n_trials_total)
+        x_sel = np.arange(1, L_sel + 1, dtype=int)
+        y_sel = np.array([_nearest_level_idx(v, levels) for v in B_sel[:L_sel]], dtype=float)
+
+        # --- square-cell probability map ---
+        x_edges = np.arange(0.5, n_trials_total + 1.5, 1.0)
+        y_edges = np.arange(-0.5, n_levels + 0.5, 1.0)
+        prob_masked = np.ma.masked_where(prob <= 0, prob)
+
+        ax.pcolormesh(
+            x_edges,
+            y_edges,
+            prob_masked,
+            cmap=cmap,
+            norm=norm,
+            shading="flat",
+        )
+
+        # --- selected run on top ---
+        ax.plot(
+            x_sel,
+            y_sel,
+            color=line_color,
+            linewidth=1.5,
+            marker="o",
+            markersize=3,
+            alpha=0.95,
+            label=f"Run #{run_idx}",
+        )
+
+        # --- mean path in level-index coordinates ---
+        if show_mean_path:
+            mean_idx = np.nanmean(idx_mat, axis=0)
+            mean_mask = np.isfinite(mean_idx)
+            if np.any(mean_mask):
+                x_mean = np.arange(1, n_trials_total + 1, dtype=int)[mean_mask]
+                ax.plot(
+                    x_mean,
+                    mean_idx[mean_mask],
+                    color=mean_color,
+                    linewidth=2.5,
+                    linestyle="-",
+                    alpha=0.95,
+                    label="Mean path",
+                )
+
+        ax.set_xlabel("Trial", fontsize=AXIS_LABEL_FONT_SIZE)
+        ax.set_ylabel("$B$", fontsize=AXIS_LABEL_FONT_SIZE)
+
+        y_tick_pos, y_tick_labels = _select_even_ticks_from_levels(levels, max_ticks=max_yticks)
+        ax.set_yticks(y_tick_pos)
+        ax.set_yticklabels(y_tick_labels, fontsize=TICK_LABEL_FONT_SIZE)
+
+        x_ticks = _choose_xticks(n_trials_total, max_ticks=max_xticks)
+        ax.set_xticks(x_ticks)
+        ax.set_xticklabels([str(x) for x in x_ticks], fontsize=TICK_LABEL_FONT_SIZE)
+
+        ax.tick_params(axis="both", which="major", labelsize=TICK_LABEL_FONT_SIZE)
+
+        title = Path(dataset_folder).name if titles is None else titles[i]
+        ax.set_title(title, fontsize=TITLE_FONT_SIZE)
+        ax.grid(False)
+
+        row_visible_axes[row_idx].append(ax)
+
+    for j in range(len(dataset_folders), len(axes_list)):
+        axes_list[j].set_visible(False)
+
+    # Finalize subplot geometry
+    fig.subplots_adjust(
+        left=layout_left,
+        right=layout_right,
+        bottom=layout_bottom,
+        top=axes_top,
+        wspace=wspace,
+        hspace=hspace,
+    )
+
+    # Add one colorbar per row after subplot positions are final
+    if show_colorbar:
+        sm = ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+
+        for r in range(nrows):
+            row_axes = row_visible_axes[r]
+            if not row_axes:
+                continue
+
+            right = max(ax.get_position().x1 for ax in row_axes)
+            y0 = min(ax.get_position().y0 for ax in row_axes)
+            y1 = max(ax.get_position().y1 for ax in row_axes)
+
+            cax = fig.add_axes([right + cbar_gap, y0, cbar_width, y1 - y0])
+            cbar = fig.colorbar(sm, cax=cax)
+            cbar.ax.tick_params(labelsize=TICK_LABEL_FONT_SIZE)
+            cbar.set_label("Probability", fontsize=AXIS_LABEL_FONT_SIZE)
+
+    legend_y = _resolve_legend_anchor_y(
+        axes_top=axes_top,
+        legend_anchor_y=legend_anchor_y,
+        legend_gap=legend_gap,
+    )
+
+    legend_handles = [
+        Line2D([0], [0], color=line_color, marker="o", markersize=4, linewidth=1.5, label=f"Random trajectory")
+    ]
+    if show_mean_path:
+        legend_handles.append(
+            Line2D([0], [0], color=mean_color, linewidth=2.0, linestyle="-", label="Mean trajectory")
+        )
+
+    fig.legend(
+        handles=legend_handles,
+        loc="upper center",
+        ncol=len(legend_handles),
+        fontsize=LEGEND_FONT_SIZE,
+        frameon=False,
+        bbox_to_anchor=(0.5, legend_y),
+    )
 
     if save_path is not None:
         save_path = Path(save_path)
