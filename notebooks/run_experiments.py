@@ -97,6 +97,8 @@ RF_HPO_ALGORITHMS = Literal[
     "ES",
     "PLATEAU",
 ]
+EXPERIMENT_SORT_RULE = Literal["random_state", "plateau_first"]
+
 DEFAULT_METHOD_GRID = get_args(RF_HPO_ALGORITHMS)
 DEFAULT_N_TRIALS_GRID = (40, 120)
 DEFAULT_DELTA_GRID = (1e-3, 3e-3, 5e-3, 7e-3, 9e-3)
@@ -316,7 +318,9 @@ def run_experiment(
     # --- Path and tags ---
     outdir: Union[str, Path] = "",
     dataset: str = "",
-    note: str = ""
+    note: str = "",
+    # --- Resume / skip already completed runs ---
+    files_done: Optional[Sequence[Union[str, Path]]] = None,
 ): # -> Tuple[Dict[str, Any], Path]:
     """
     Run experiment with specified tuning method and save results.
@@ -338,8 +342,8 @@ def run_experiment(
     log_file  = _output_file_name()
     dill_file = _output_file_name(ext='dill.tmp')
 
-    # if dill_file in DOROTHEA_FILES:
-    #     return
+    if files_done and dill_file in files_done:
+        return
 
     # Prepare all parameters
     params = {
@@ -648,7 +652,7 @@ def _get_dataset_configs(
     configs = []
 
     # "TPE" vs "PLATEAU"
-    method_grid_ = tuple(meth for meth in ['TPE', 'PLATEAU'] if meth in method_grid)
+    method_grid_ = tuple(meth for meth in method_grid if meth in ['TPE', 'PLATEAU'])
     if method_grid_:
         configs += _get_run_experiment_configs(
             tune_criterion_grid=tune_criterion_grid,
@@ -666,9 +670,9 @@ def _get_dataset_configs(
 
     # other baseline algorithms
     method_grid_=tuple(
-        meth for meth in [
-            'TPE_Tmin', 'TPE_Tmin-Tmax', 'TPE_Tmin-ES', 'TPE_Tmin-PLT', 'ES', 'HB'
-        ] if meth in method_grid 
+        meth for meth in method_grid if meth in [
+            'TPE_Tmin-PLT', 'ES', 'HB', 'TPE_Tmin', 'TPE_Tmin-Tmax', 'TPE_Tmin-ES'
+        ]   
     )
     if method_grid_ and tune_criterion_grid_ and depth_trees_only_grid_: 
         configs += _get_run_experiment_configs(
@@ -682,11 +686,7 @@ def _get_dataset_configs(
         )
 
     # vary sf for ladder-based algorithms (plateau-like + Hyperband)
-    method_grid_=tuple(
-        meth for meth in [
-            'PLATEAU'
-        ] if meth in method_grid 
-    )
+    method_grid_=tuple(meth for meth in method_grid if meth == 'PLATEAU')
     if method_grid_ and tune_criterion_grid_ and depth_trees_only_grid_ and len(scale_factor_grid) > 1:
         configs += _get_run_experiment_configs(
             tune_criterion_grid=tune_criterion_grid_,
@@ -699,11 +699,7 @@ def _get_dataset_configs(
         )
 
     # vary delta for plateau-like algorithms
-    method_grid_=tuple(
-        meth for meth in [
-            'PLATEAU'
-        ] if meth in method_grid 
-    )
+    method_grid_=tuple(meth for meth in method_grid if meth == 'PLATEAU')
     if method_grid_ and tune_criterion_grid_ and depth_trees_only_grid_ and len(delta_grid) > 1:
         configs += _get_run_experiment_configs(
             tune_criterion_grid=tune_criterion_grid_,
@@ -730,7 +726,8 @@ def process_dataset(
     configs: Optional[List[Dict[str, Any]]] = None,
     dataset: str = "",
     random_state: Optional[int] = None,
-    sort_params_by_random_state = False,
+    files_done: Optional[Sequence[Union[str, Path]]] = None,
+    sort_experiments_by: Optional[Sequence[EXPERIMENT_SORT_RULE]] = None,
     # run_queue_pinned params
     use_smt: bool = True,
     # --- FileMover parameters
@@ -743,6 +740,125 @@ def process_dataset(
     verbose: int = 0,
     **kwargs,
 ):
+    """
+    Build and run a queue of Random Forest HPO experiments for one dataset.
+
+    This function is the dataset-level orchestration entry point. It either uses
+    a user-provided list of experiment configurations (`configs`) or generates
+    them from the grid parameters passed through `**kwargs`. The resulting
+    configurations are split into shared (`common_params`) and per-run
+    (`param_list`) arguments, optionally sorted, and then executed with
+    `run_queue_pinned()`.
+
+    The function can also start a background `FileMoverThread` to move completed
+    log and dill files from the dataset directory to another location while the
+    experiment queue is still running.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Feature matrix passed to every experiment.
+    y : np.ndarray
+        Target vector passed to every experiment.
+    problem : {'clf', 'reg'}
+        Problem type: classification ('clf') or regression ('reg').
+    score_func : callable
+        OOB scoring function with signature ``score_func(y, y_pred_like) -> float``.
+        It is forwarded to the selected tuning routine through `run_experiment()`.
+    greater_is_better : bool
+        Optimization direction for the scoring function. Use True for metrics to
+        maximize and False for losses/errors to minimize.
+
+    configs : list of dict or None, default=None
+        Explicit per-experiment configuration dictionaries. If provided, these
+        configurations are used directly and no configuration grid is generated.
+        If None, configurations are generated by `_get_dataset_configs()` from
+        the grid-related values passed through `**kwargs`.
+
+    dataset : str, default=""
+        Dataset name or dataset output directory. It is passed to generated
+        configurations and is also used as the source directory for temporary
+        files when `move_dir` is enabled.
+
+    random_state : int or None, default=None
+        Base random seed used when generating experiment configurations. If not
+        None, generated runs typically receive consecutive seeds
+        ``random_state + K`` across repeated experiments.
+
+    files_done : sequence of str or Path or None, default=None
+        Optional resume list of temporary ``.dill.tmp`` output paths to skip.
+        Intended for restarting after timeout/crash without rerunning already
+        completed experiments. The mechanism is filename-based and should be
+        used with a fixed ``random_state``; with ``random_state=None``, generated
+        timestamp-based seeds make output filenames non-reproducible across
+        reruns.
+
+    sort_experiments_by : sequence of {'random_state', 'plateau_first'} or None, default=None
+        Optional ordering rules for the final experiment queue. The order of
+        entries in this sequence defines sorting priority.
+
+        Supported rules are:
+        - ``"random_state"``: group/sort experiments by their `random_state`.
+          This helps cover repeated random seeds more uniformly across methods.
+        - ``"plateau_first"``: run plateau-like methods earlier. Currently this
+          prioritizes ``"PLATEAU"`` and ``"TPE_Tmin-PLT"``.
+
+        Examples:
+        - ``("random_state", "plateau_first")`` keeps random states as the
+          primary ordering and places plateau-like methods first inside each
+          random-state block.
+        - ``("plateau_first", "random_state")`` starts all plateau-like methods
+          first and sorts them by random state internally.
+        - None leaves the generated queue order unchanged.
+
+    use_smt : bool, default=True
+        Passed to `run_queue_pinned()`. If True, logical CPUs from SMT/hyperthreading
+        may be used according to the CPU-pinning scheduler policy.
+
+    move_dir : str or None, default=None
+        Destination directory for completed output files. If not None and different
+        from `dataset`, a background file mover is started. The source directory
+        is cleaned from previous temporary files before the run starts.
+
+    move_min_age : int, default=10
+        Minimum file age in seconds before the background mover may move a file.
+
+    move_check_interval : int, default=1
+        Polling interval in seconds for the background file mover.
+
+    move_ignore_ext : str, default='.tmp'
+        File extension ignored by the background mover. Temporary files are renamed
+        after completion, so this prevents moving incomplete outputs.
+
+    progress_bar : bool, default=True
+        Whether to show progress bars for the main experiment queue and, if enabled,
+        the background file mover.
+
+    verbose : int, default=0
+        Verbosity level. The value passed to individual tuning routines is reduced
+        via ``max(verbose - 3, 0)`` so that queue-level verbosity can be separated
+        from per-trial logging.
+
+    **kwargs
+        Additional keyword arguments. Arguments accepted by `run_queue_pinned()`
+        are forwarded to the scheduler. The remaining arguments are used to build
+        experiment configurations through `_get_dataset_configs()` when
+        `configs is None`.
+
+    Raises
+    ------
+    ValueError
+        If `sort_experiments_by` contains unknown or duplicate sorting rules.
+    ValueError
+        If `move_dir` is a subdirectory of `dataset`, which would make the file
+        mover recursively move files into its own source tree.
+
+    Notes
+    -----
+    This function does not return experiment results directly. Each run writes a
+    `.log` file and a `.dill` file via `run_experiment()`. The final analysis is
+    expected to load those saved dill files.
+    """
     cpu_pinning_args = _filter_kwargs(run_queue_pinned, kwargs)
     cpu_pinning_args['use_smt'] = use_smt
     cpu_pinning_args['progress_bar'] = progress_bar
@@ -759,8 +875,11 @@ def process_dataset(
     else:
         configs_ = configs
 
-    common_params, param_list = split_common_params(configs_)
+    files_done_set = None
+    if files_done is not None:
+        files_done_set = {Path(f) for f in files_done}
 
+    common_params, param_list = split_common_params(configs_)
     common_params = {
         **common_params, 
         'X': X, 'y': y, 
@@ -768,10 +887,46 @@ def process_dataset(
         'score_func': score_func, 
         'greater_is_better': greater_is_better,
         'verbose': max(verbose - 3, 0),
+        'files_done': files_done_set,
     }
 
-    if sort_params_by_random_state and random_state is not None:
-        param_list.sort(key=lambda p: p.get('random_state', float('-inf')))
+    # Sort param_list according to sort_experiments_by
+    if sort_experiments_by is not None:
+        plateau_methods = {"PLATEAU", "TPE_Tmin-PLT"}
+        allowed = set(get_args(EXPERIMENT_SORT_RULE))
+
+        unknown = set(sort_experiments_by) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unknown sort_experiments_by rules: {unknown}. "
+                f"Allowed rules are: {sorted(allowed)}."
+            )
+
+        if len(set(sort_experiments_by)) != len(tuple(sort_experiments_by)):
+            raise ValueError(
+                f"Duplicate sort_experiments_by rules are not allowed: {sort_experiments_by}."
+            )
+
+        sort_key = {
+            "random_state": lambda p: (
+                p.get("random_state", common_params.get("random_state"))
+                if p.get("random_state", common_params.get("random_state")) is not None
+                else float("-inf")
+            ),
+            "plateau_first": lambda p: (
+                0 if p.get("method", common_params.get("method")) in plateau_methods else 1
+            ),
+        }
+
+        param_list = [
+            p for _, p in sorted(
+                enumerate(param_list),
+                key=lambda item: (
+                    tuple(sort_key[rule](item[1]) for rule in sort_experiments_by)
+                    + (item[0],)
+                ),
+            )
+        ]
 
     # Start background file mover if requested
     if move_dir is not None and dataset != move_dir:
@@ -818,10 +973,11 @@ def process_dataset(
     )
 
     if mover is not None:
-        mover.wait_for_completion()
+        # In resume mode, some experiments are skipped via files_done, so the
+        # precomputed total_files may include outputs that will never be created.
+        # Do not wait indefinitely for skipped runs.
+        resume_mode = bool(files_done)
+        mover.wait_for_completion(timeout=move_min_age + 2 * move_check_interval if resume_mode else None)
         mover.stop()
 
 
-# with open('dorothea_files.txt', 'r', encoding='utf-8') as f:
-#     DOROTHEA_FILES = [line.strip() for line in f if line.strip()]
-# DOROTHEA_FILES = [Path(f.replace('/home/a.lange/RF_plateau_HPO/rf_plateau_hpo/notebooks', '/tmp/a.lange') + '.tmp') for f in DOROTHEA_FILES]
