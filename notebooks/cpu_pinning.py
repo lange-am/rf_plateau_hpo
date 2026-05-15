@@ -239,6 +239,7 @@ def run_queue_pinned(
     param_list: Sequence[Dict[str, Any]],
     *,
     n_phys_cores_per_run: int = 1,
+    allowed_cpus: Optional[Sequence[int]] = None,
     static_params: Optional[Dict[str, Any]] = None,
     use_smt: Union[bool, str] = "auto",
     socket_policy: str = "prefer",
@@ -272,6 +273,11 @@ def run_queue_pinned(
         ``static_params``; conflicts raise an error during merging.
     n_phys_cores_per_run:
         Number of physical CPU cores allocated to each concurrent run slot (each worker).
+    allowed_cpus:
+        Optional explicit list of logical CPU IDs from which run slots are built.
+        If None, use the current process affinity mask returned by
+        os.sched_getaffinity(0). The provided list must be a subset of the current
+        allowed CPU set; this prevents bypassing Slurm/cpuset restrictions.
     static_params:
         Shared parameters applied to every run (e.g., X, y, problem, score_func, greater_is_better,
         class_weight). These parameters are stored once per worker and are not sent through the task queue
@@ -344,13 +350,23 @@ def run_queue_pinned(
 
     static_params_local = dict(static_params) if static_params is not None else None
 
+    allowed_cpu_list = _get_allowed_cpus() if allowed_cpus is None else sorted(set(map(int, allowed_cpus)))
+
+    # Respect externally imposed affinity/cpuset restrictions.
+    externally_allowed = set(_get_allowed_cpus())
+    not_allowed = set(allowed_cpu_list) - externally_allowed
+    if not_allowed:
+        raise ValueError(
+            f"allowed_cpus contains CPUs outside the current process affinity/cpuset: "
+            f"{sorted(not_allowed)}. Current allowed CPUs: {sorted(externally_allowed)}."
+        )
+
     run_cpu_blocks, info = _allocate_run_cpu_blocks(
-        allowed_cpus=_get_allowed_cpus(),
+        allowed_cpus=allowed_cpu_list,
         n_phys_cores_per_run=n_phys_cores_per_run,
         use_smt=use_smt,
         socket_policy=socket_policy,
     )
-
     if not run_cpu_blocks:
         raise RuntimeError("No run slots could be allocated from allowed CPUs.")
 
