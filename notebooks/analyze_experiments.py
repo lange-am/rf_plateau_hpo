@@ -358,7 +358,7 @@ def experiment_comparison_table(
     DEPTH_ONLY = "only depth"
     ALGORITHM = "algorithm"
     N_TRIALS = f"$n_{{trials}}$"
-    SIGNIFICANCE = "t-test p-value, Cohen's $d$ (or Mann-Whitney p-value, Cliff's $\delta$)"
+    SIGNIFICANCE = r"t-test p-value, Cohen's $d$ (or Mann-Whitney p-value, Cliff's $\delta$)"
     if not show_effect_size:
         SIGNIFICANCE = "t-test or Mann-Whitney p-value"
     
