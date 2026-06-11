@@ -1,3 +1,13 @@
+"""
+split_common_params.py
+----------------------
+
+Utilities for separating shared and per-run parameters before queue execution.
+
+Large mutable objects such as arrays and callables are considered common only
+when they are the same object by identity; simple immutable scalars are compared
+by value.
+"""
 from typing import Any, Dict, List, Tuple, Sequence
 import numpy as np
 

@@ -2,41 +2,34 @@
 run_experiments.py
 ------------------
 
-This module provides functions for running Random Forest tuning experiments using
-three different search methods implemented in `rf_plateau_hpo.core`:
+Experiment orchestration helpers for the Random Forest HPO study specified
+in the project-level CITATION.cff file.
 
-- `tune_rf_oob`          – classic Optuna HPO (baseline).
-- `tune_rf_oob_bohb`     – BOHB‑like multi‑fidelity baseline (TPE + Hyperband).
-- `tune_rf_oob_plateau`  – the proposed plateau‑search algorithm (new method).
+The module wraps the public tuning routines from ``rf_plateau_hpo.core`` and
+constructs the experimental protocols used in the paper:
 
-All experiments are logged and their results (study summaries, best configurations,
-metadata) are saved as `.dill` files for later analysis. The module also includes
-helpers to generate parameter grids and to orchestrate large‑scale parallel runs
-using `cpu_pinning.run_queue_pinned` for CPU‑affinity‑controlled parallel execution.
+- ``TPE``: classic Optuna/TPE baseline with a fixed ``n_estimators`` range.
+- ``HB``: Hyperband-style multi-fidelity baseline using ``n_estimators`` as the resource.
+- ``ES``: naive monotone early-stopping baseline based on the left plateau condition.
+- ``PLATEAU``: proposed triplet-based plateau-search algorithm.
+- ``TPE_Tmin`` / ``TPE_Tmin-Tmax`` / ``TPE_Tmin-ES`` / ``TPE_Tmin-PLT``:
+  two-stage decoupled variants used for ablation studies.
 
-Key Functions
+All experiments are logged and saved as ``.dill`` files. Study metadata includes
+best-trial summaries, selected tree counts, pruning status, tree-building cost,
+and, for PLATEAU runs, trial-wise triplet trajectories. The module also provides
+helpers for building parameter grids and for running large experiment queues via
+``cpu_pinning.run_queue_pinned``.
+
+Key functions
 -------------
-- `run_experiment()`          – Run a single tuning experiment with a given method.
-- `process_dataset()`         – Generate a full factorial set of experiment configurations
-                                and execute them in parallel with CPU pinning.
-- `_get_run_experiment_configs()` – Build a list of configuration dicts for all combinations
-                                    of hyperparameters (method, delta, n_trials, etc.).
-- `_get_dataset_configs()`    – Higher‑level grid builder that creates configurations
-                                for baseline comparisons and sensitivity analyses.
+- ``run_experiment()``: run a single tuning experiment with a selected method.
+- ``process_dataset()``: generate a full set of configurations for one dataset
+  and execute them with CPU pinning and optional background file moving.
+- ``parse_study()`` / ``parse_log_tail()``: extract metrics from Optuna studies
+  and log files for downstream analysis.
 
-Requirements
-------------
-- The main package `rf_plateau_hpo` (with its dependencies: numpy, pandas, scikit‑learn,
-  optuna, PyYAML) must be installed.
-- **Additional required package**: `dill` (≥0.3.8) for serialisation of experiment results.
-- The CPU‑pinning scheduler (`cpu_pinning`) relies on Linux-specific system calls
-  (`os.sched_setaffinity`); it will work only on Linux (on other OSes it falls back
-  to `spawn` start method without affinity control).
-
-All functions share consistent logging and parameter handling. For analysing the
-saved results, see the companion module `analyze_experiments.py`.
-
-Copyright (c) 2025 Andrey Lange
+Copyright (c) 2025-2026 Andrey Lange and rf_plateau_hpo contributors.
 Licensed under the MIT License. See the LICENSE file in the project root for details.
 """
 import ast
@@ -391,7 +384,7 @@ def run_experiment(
     study0, study = None, None
     log_file0 = None
     if "TPE_Tmin" in method:
-        # Special baselines when n_estimators and other hyperparameters are tuned separetely
+        # Special baselines when n_estimators and other hyperparameters are tuned separately
         t_min, t_max = classic_params['n_estimators_range']
 
         log_file0 = _output_file_name(method="TPE_Tmin")
@@ -423,14 +416,14 @@ def run_experiment(
             # TPE Tmin-ES: classic HPO search with fixed T=t_min + early stopping
             if n_estimators_ladder[0] != t_min:
                 warnings.warn(
-                    f"In '{method}' it is asumed that n_estimators_ladder[0]=Tmin."
+                    f"In '{method}' it is assumed that n_estimators_ladder[0]=Tmin."
                     f"(n_estimators_ladder[0]={n_estimators_ladder[0]}, Tmin={t_min})",
                     RuntimeWarning,
                 )
 
             if hyperband_reduction_factor >= 2:
                 warnings.warn(
-                    f"In '{method}' it is asumed that hyperband_reduction_factor < 2 (no pruning)."
+                    f"In '{method}' it is assumed that hyperband_reduction_factor < 2 (no pruning)."
                     f"(hyperband_reduction_factor={hyperband_reduction_factor})",
                     RuntimeWarning,
                 )
@@ -441,7 +434,7 @@ def run_experiment(
             # TPE Tmin-PLT: classic HPO search with fixed T=t_min + plateau search 
             if n_estimators_start != t_min:
                 warnings.warn(
-                    f"In '{method}' it is asumed that n_estimators_start=Tmin."
+                    f"In '{method}' it is assumed that n_estimators_start=Tmin."
                     f"(n_estimators_start={n_estimators_start}, Tmin={t_min})",
                     RuntimeWarning,
                 )
@@ -452,10 +445,10 @@ def run_experiment(
         # TPE: classic search over all hyperparameters
         _, study = tune_rf_oob(**classic_params)
     elif method == "ES":
-        # ES: early-stoping with delta tolerance
+        # ES: early-stopping with delta tolerance
         if hyperband_reduction_factor >= 2:
             warnings.warn(
-                f"In '{method}' it is asumed that hyperband_reduction_factor < 2 (no pruning)."
+                f"In '{method}' it is assumed that hyperband_reduction_factor < 2 (no pruning)."
                 f"(hyperband_reduction_factor={hyperband_reduction_factor})",
                 RuntimeWarning,
             )
@@ -465,14 +458,14 @@ def run_experiment(
         # HB: Hyperband-like with n_estimators budgets 
         if hyperband_reduction_factor < 2:
             warnings.warn(
-                f"In '{method}' (Hyperband) it is asumed that hyperband_reduction_factor >= 2 (HyperbandPruner() is used)."
+                f"In '{method}' (Hyperband) it is assumed that hyperband_reduction_factor >= 2 (HyperbandPruner() is used)."
                 f"(hyperband_reduction_factor={hyperband_reduction_factor})",
                 RuntimeWarning,
             )
         
         if delta >= 0.0:
             warnings.warn(
-                f"In '{method}' (Hyperband) it is asumed that delta < 0 (no early stopping)."
+                f"In '{method}' (Hyperband) it is assumed that delta < 0 (no early stopping)."
                 f"(delta={delta})",
                 RuntimeWarning,
             )
@@ -841,7 +834,12 @@ def process_dataset(
 
     **kwargs
         Additional keyword arguments. Arguments accepted by `run_queue_pinned()`
-        are forwarded to the scheduler. The remaining arguments are used to build
+        are forwarded to the scheduler. Important CPU-pinning controls include
+        ``n_phys_cores_per_run`` (physical cores allocated to one experiment),
+        ``socket_policy`` (``"prefer"``, ``"strict"``, or ``"none"``), and
+        ``override_n_jobs``. By default, the scheduler injects ``n_jobs`` from the
+        allocated CPU block; if a manually supplied ``n_jobs`` should be preserved,
+        pass ``override_n_jobs=False``. The remaining arguments are used to build
         experiment configurations through `_get_dataset_configs()` when
         `configs is None`.
 

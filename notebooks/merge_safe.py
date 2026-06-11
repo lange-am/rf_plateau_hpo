@@ -1,3 +1,13 @@
+"""
+merge_safe.py
+-------------
+
+Conflict-aware dictionary merging for experiment configuration dictionaries.
+
+The helper is intentionally conservative: when the same key appears in both
+input dictionaries with different values, it raises by default. This prevents
+silent overwrites when composing shared and per-run parameters.
+"""
 import warnings
 from typing import Any, Dict
 

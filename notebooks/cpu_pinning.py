@@ -26,7 +26,7 @@ Notes
 - For best results, prefer running on an otherwise idle node and use start_method="fork"
   on Linux, especially when static_params include large arrays.
 
-Copyright (c) 2025 Andrey Lange
+Copyright (c) 2025-2026 Andrey Lange and rf_plateau_hpo contributors.
 Licensed under the MIT License. See the LICENSE file in the project root for details.
 
 """

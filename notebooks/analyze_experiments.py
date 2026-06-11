@@ -2,32 +2,29 @@
 analyze_experiments.py
 ----------------------
 
-This module provides functions for analyzing and visualizing results from Random Forest tuning experiments
-performed with `rf_plateau_hpo.core` and orchestrated by `run_experiments.py`.
+Analysis and visualization helpers for Random Forest HPO experiments generated
+by ``notebooks/run_experiments.py``.
 
-Key Functions
+The module aggregates ``.dill`` files, extracts Optuna study metadata, performs
+statistical comparisons, exports compact HTML/LaTeX tables, and creates figures
+used in the accompanying paper.
+
+Key functions
 -------------
-- `read_experiment_results()`           – Load and aggregate metrics from `.dill` experiment files.
-- `bootstrap_effect_size_alternative()` – Compute Cliff's Delta or Cohen's d with bootstrap confidence intervals.
-- `experiment_comparison_table()`       – Generate a comparison table with statistical tests (t-test/Mann‑Whitney)
-                                          and effect sizes between different experimental configurations.
-- `process_html_table()`                – Produce ultra‑compact HTML table formatting for comparison results.
-- `tab2tex()`                           – Convert a comparison DataFrame to a LaTeX `tabular` environment.
-- `plot_dataset_comparisons()`          – Create grouped bar plots comparing time and tree counts across datasets.
-- `plot_delta_boxplots()`               – Boxplots of best scores versus the plateau tolerance ε (delta).
-- `plot_B_trajectories()`               – Plot trial-wise central triplet size B for a selected run together 
-                                          with the mean ± std trajectory on a logarithmic tree-count scale.
+- ``read_experiment_results()``: load and aggregate metrics from experiment files.
+- ``bootstrap_effect_size_alternative()``: compute Cohen's d or Cliff's delta
+  with bootstrap stabilization.
+- ``experiment_comparison_table()``: build comparison tables with t-tests or
+  Mann-Whitney tests and signed effect sizes.
+- ``process_html_table()`` / ``tab2tex()``: format result tables for inspection
+  and manuscript export.
+- ``plot_dataset_comparisons()``: grouped bars for runtime and selected tree count.
+- ``plot_delta_boxplots()``: boxplots of best scores versus PLATEAU tolerance.
+- ``plot_B_trajectories()``: trial-wise PLATEAU trajectories with empirical
+  frequency heatmaps over nominal tree-count levels.
 
-Additional Utilities
---------------------
-- `bootstrap_effect_size_alternative()` – Robust effect size estimation with bootstrap.
-
-All visualizations use Matplotlib and Seaborn. For details on the underlying tuning algorithms,
-see the `rf_plateau_hpo.core` module and the companion `run_experiments.py`.
-
-Copyright (c) 2025 Andrey Lange
+Copyright (c) 2025-2026 Andrey Lange and rf_plateau_hpo contributors.
 Licensed under the MIT License. See the LICENSE file in the project root for details.
-
 """
 import ast
 from collections import Counter

@@ -1,14 +1,16 @@
 """
 file_mover.py
+-------------
 
-Module for background moving of "old" files from a temporary directory (e.g., /tmp)
-to persistent storage. Designed for use in Jupyter notebooks.
+Background file mover used by long-running notebook experiments.
 
-Main components:
-- FileMoverThread: a thread that periodically scans the source directory and moves files
-  that have not been modified for at least `min_age` seconds, optionally ignoring files
-  with a specific extension (e.g., '.tmp').
-- clean_source_dir(): deletes all contents of the source directory (use with caution!).
+The main class, ``FileMoverThread``, periodically scans a source directory
+(e.g. a temporary directory under ``/tmp``) and moves completed files to
+persistent storage. Temporary files can be excluded by extension, and an optional
+progress bar can track the expected number of moved files.
+
+Copyright (c) 2025-2026 Andrey Lange and rf_plateau_hpo contributors.
+Licensed under the MIT License. See the LICENSE file in the project root for details.
 """
 
 import os
