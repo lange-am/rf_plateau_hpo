@@ -2,34 +2,31 @@
 rf_plateau_hpo.core
 -------------------
 
-Implementation of the core algorithms for plateau-based Random Forest tuning.
+Core Random Forest tuning algorithms used by the rf-plateau-hpo project.
 
-This module implements the methods described in the paper:
-"How Many Trees in Random Forest? A Revisited Approach with Plateau Search 
-and Optuna Integration" (Submitted to IEEE Access).
+The module implements the routines accompanying the paper specified in
+the project-level CITATION.cff file.
 
-Copyright (c) 2025 Andrey Lange
-Licensed under the MIT License. See the LICENSE file in the project root 
-for full license information.
+Three public tuners are provided:
 
-Repository: https://github.com/lange-am/rf_plateau_hpo
+1) ``tune_rf_oob``
+   Classic Optuna/TPE HPO with an OOB objective and a fixed search range for
+   ``n_estimators``.
 
-Three tuners for Random Forest:
+2) ``tune_rf_oob_bohb``
+   BOHB-like / Hyperband-style multi-fidelity baseline where ``n_estimators`` is
+   the resource and OOB scores are reported along a fixed ladder.
 
-1) tune_rf_oob:
-   Classic Optuna HPO with OOB objective (scikit-learn OOB support).
+3) ``tune_rf_oob_plateau``
+   Triplet-based OOB plateau search that adapts ``n_estimators`` internally via
+   the geometric triplet ``(L, B, R)`` while Optuna samples the remaining Random
+   Forest hyperparameters.
 
-2) tune_rf_oob_bohb:
-   BOHB-like (TPE + Hyperband) multi-fidelity baseline using an external ladder of `n_estimators`
-   and intermediate reports/pruning along that ladder.
+All functions share consistent logging/verbosity and return Optuna studies with
+trial-level metadata used by the experiment-analysis scripts.
 
-3) tune_rf_oob_plateau:
-   Triplet-based OOB plateau search that finds a near-minimal `n_estimators`
-   while running Bayesian HPO (Optuna) over the other hyperparameters.
-
-All functions share consistent logging/verbosity.
-Return values are documented per function.
-They are compatible with Python 3.8+ (no PEP 585 typing).
+Copyright (c) 2025-2026 Andrey Lange and rf_plateau_hpo contributors.
+Licensed under the MIT License. See the LICENSE file in the project root for details.
 """
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 try:

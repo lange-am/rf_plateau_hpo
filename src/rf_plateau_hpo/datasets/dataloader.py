@@ -67,6 +67,9 @@ Design notes
   - Other loaders (`sklearn:`, `uci:`, `kaggle-comp:`, `url:`/`http(s)`) ->
     look under `cache/<key>/` first; if not found, fetch **and persist** to `cache/<key>/`.
 - Python 3.8 compatible.
+
+Copyright (c) 2025-2026 Andrey Lange and rf_plateau_hpo contributors.
+Licensed under the MIT License. See the LICENSE file in the project root for details.
 """
 
 from __future__ import annotations
