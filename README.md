@@ -1,143 +1,154 @@
 # rf-plateau-hpo
 
-Utilities and experiments for **Random Forest** hyperparameter tuning with **Optuna**, including a **plateau search** to find a **sufficient number of trees** (`n_estimators`).
+Utilities, notebooks, and reproducibility scripts for **Random Forest** hyperparameter optimization with **Optuna**, centered on a triplet-based **PLATEAU** search for a sufficient number of trees (`n_estimators`).
+
+The repository accompanies the paper specified in [`CITATION.cff`](CITATION.cff).
 
 The Python package **`rf_plateau_hpo`** contains:
-- `rf_plateau_hpo.core` — the main tuning routines: `tune_rf_oob`, `tune_rf_oob_plateau`.
-- `rf_plateau_hpo.datasets` — a declarative **dataset registry** (`data/datasets.yml`) and a loader with local caching/downloading.
+
+- `rf_plateau_hpo.core` — the public tuning routines:
+  - `tune_rf_oob`: classic Optuna/TPE tuning with `n_estimators` sampled from a fixed range;
+  - `tune_rf_oob_bohb`: BOHB-like / Hyperband-style multi-fidelity baseline using `n_estimators` as the resource;
+  - `tune_rf_oob_plateau`: the triplet-based PLATEAU search, where TPE samples the non-budget Random Forest hyperparameters and the tree count is adapted internally.
+- `rf_plateau_hpo.datasets` — a declarative dataset registry (`data/datasets.yml`) and a local-first dataset loader.
+- `notebooks/` — experiment orchestration, analysis helpers, and the full paper-reproducibility notebook.
 
 ---
 
 ## Installation
 
 ```bash
-# from repo root
+# from the repository root
 pip install -e ".[dev]"
-# or minimal runtime deps:
-# pip install scikit-learn optuna pyyaml pandas
 ```
+
+The minimal runtime package depends on NumPy, pandas, scikit-learn, Optuna, and PyYAML. The `dev` extra additionally installs notebook and experiment-analysis dependencies such as `dill`, `matplotlib`, `seaborn`, `scipy`, `tqdm`, `ucimlrepo`, and Kaggle support.
 
 Python 3.8+ is supported.
 
 ---
 
-## Quickstart: loading data as (X, y)
+## Quickstart: loading data as `(X, y)`
 
 ```python
 from pathlib import Path
 from rf_plateau_hpo.datasets.dataloader import load_dataset
 
-# Case A: run from repository root
+# Case A: run from the repository root
 datasets_file = Path("data/datasets.yml").resolve()
 
 # Case B: run from notebooks/ (repo_root/notebooks)
-# from pathlib import Path
 # ROOT = Path.cwd().parent
 # datasets_file = (ROOT / "data" / "datasets.yml").resolve()
 
-# Get (X, y) for a dataset key
 X, y = load_dataset("breast_cancer", yml=datasets_file, return_X_y=True)
-X.shape, y.shape
+print(X.shape, y.shape)
 ```
 
 ---
 
-## RF tuning examples (real API)
+## RF tuning examples
 
-These examples reflect `src/rf_plateau_hpo/core.py`.
+These examples reflect the public API in `src/rf_plateau_hpo/core.py`.
 
-### 1) OOB Optuna tuning — `tune_rf_oob`
+### 1) Classic OOB/TPE tuning — `tune_rf_oob`
 
 ```python
 from rf_plateau_hpo.core import tune_rf_oob
-from sklearn.metrics import roc_auc_score, mean_squared_error
+from sklearn.metrics import roc_auc_score
 
-# Classification (AUC, higher is better)
-model_clf, study_clf = tune_rf_oob(
-    X, y,
+auc_binary = lambda y_true, proba: roc_auc_score(y_true, proba[:, 1])
+
+model_tpe, study_tpe = tune_rf_oob(
+    X,
+    y,
     problem="clf",
-    score_func=lambda y, proba: roc_auc_score(y, proba[:, 1]),
+    score_func=auc_binary,
     greater_is_better=True,
+    n_estimators_range=(100, 2565),
     n_trials=20,
     random_state=42,
     n_jobs=-1,
     verbose=1,
 )
-print("Best value:", study_clf.best_value)
-print("Best params:", study_clf.best_params)
 
-# Regression (MSE, lower is better)
-# model_reg, study_reg = tune_rf_oob(
-#     Xr, yr,
-#     problem="reg",
-#     score_func=mean_squared_error,
-#     greater_is_better=False,
-#     n_trials=20,
-#     random_state=123,
-#     n_jobs=-1,
-#     verbose=1,
-# )
-# print("Best value (MSE):", study_reg.best_value)
-# print("Best params:", study_reg.best_params)
+print("Best value:", study_tpe.best_value)
+print("Best params:", study_tpe.best_params)
 ```
 
-### 2) Plateau search for `n_estimators` — `tune_rf_oob_plateau`
+For regression, pass a scorer such as `mean_squared_error` and set `greater_is_better=False`.
+
+### 2) Hyperband-style baseline — `tune_rf_oob_bohb`
+
+```python
+from rf_plateau_hpo.core import tune_rf_oob_bohb
+
+model_hb, best_n_hb, study_hb, stopped_hb = tune_rf_oob_bohb(
+    X,
+    y,
+    problem="clf",
+    score_func=auc_binary,
+    greater_is_better=True,
+    n_estimators_ladder=(100, 150, 225, 338, 507, 760, 1140, 1710, 2565),
+    hyperband_reduction_factor=3,
+    n_trials=20,
+    random_state=42,
+    n_jobs=-1,
+    verbose=1,
+)
+
+print("Best value:", study_hb.best_value)
+print("Best n_estimators:", best_n_hb)
+```
+
+### 3) Triplet-based PLATEAU search — `tune_rf_oob_plateau`
 
 ```python
 from rf_plateau_hpo.core import tune_rf_oob_plateau
-from sklearn.metrics import roc_auc_score
 
-model_p, best_n_estimators, study_p, plateau_found = tune_rf_oob_plateau(
-    X, y,
+model_p, best_n_p, study_p, plateau_found = tune_rf_oob_plateau(
+    X,
+    y,
     problem="clf",
-    score_func=lambda y, proba: roc_auc_score(y, proba[:, 1]),
+    score_func=auc_binary,
     greater_is_better=True,
-    n_trials=15,       # Optuna trials per inner search
+    n_estimators_start=100,
+    scale_factor=1.5,
+    delta=1e-3,
+    max_trees=100000,
+    n_trials=20,
     random_state=42,
     n_jobs=-1,
     verbose=1,
 )
 
 print("Plateau found:", plateau_found)
-print("Best n_estimators:", best_n_estimators)
+print("Best n_estimators:", best_n_p)
 print("Best value:", study_p.best_value)
 print("Best params:", study_p.best_params)
 ```
 
-> Both functions return a fitted model and an Optuna `study`. The plateau variant additionally returns `(best_n_estimators, plateau_found)`.
+The PLATEAU routine does **not** sample `n_estimators` directly in the TPE search space. Instead, TPE samples the remaining Random Forest hyperparameters and the tree count is moved across trials by the internal triplet rule.
 
 ---
 
-## Notebooks
+## Notebooks and experiment scripts
 
-The primary notebook for reproducing all experiments from the paper is [`paper_repro.ipynb`](paper_repro.ipynb). This comprehensive notebook contains:
+The main reproducibility notebook is [`notebooks/paper_repro.ipynb`](notebooks/paper_repro.ipynb). It contains the end-to-end workflow used for the paper:
 
-- **Dataset loading and preprocessing**: All datasets are loaded from the declarative registry (`data/datasets.yml`), 
-  with appropriate preprocessing for each: special handling for categorical features, missing values, and class imbalance
+- loading and preprocessing all benchmark datasets from `data/datasets.yml`;
+- launching experiments through `notebooks/run_experiments.py`;
+- comparing TPE, HB, ES, PLATEAU, and decoupled variants;
+- generating statistical tables for `n_trials`, `tune_criterion`, `only_depth`, joint-vs-decoupled tuning, pruning, runtime, tree-count cost, and scale-factor sensitivity;
+- generating the paper figures, including PLATEAU trajectories, tolerance boxplots, and runtime/tree-count bar plots.
 
-- **Hyperparameter optimization experiments**: Systematic comparison of two Random Forest tuning approaches across multiple configurations:
-  - **Classic Optuna search**: Using `tune_rf_oob` with adaptive trial counts
-  - **Plateau search**: Using `tune_rf_oob_plateau` to find sufficient trees adaptively
-  - Four configuration variations tested for each method:
-    - Tune criterion: YES/NO
-    - Only depth restriction: YES/NO
-    - Trials: 120 vs. 40 comparison
+The helper modules in `notebooks/` are ordinary Python files:
 
-- **Statistical analysis**: Comprehensive hypothesis testing with effect size measures:
-  - **Performance metrics**: ROC-AUC for classification, RMSE for regression
-  - **Statistical tests**: t-test for normal distributions, Mann-Whitney U-test otherwise
-  - **Effect sizes**: Cohen's d and Cliff's δ calculations
-  - **Comparisons**: Method differences, trial count impact, configuration effects
-
-- **Results compilation and export**:
-  - Interactive HTML table with all statistical results
-  - LaTeX table generation for publication (`n_trials_120_vs_40.tex`, `criterion_depth_yes_vs_no.tex`)
-  - Performance, time, and tree count comparisons across all datasets
-
-- **Visual comparison**: Automated generation of comparative visualizations for each dataset:
-  - Performance distribution (box plots)
-  - Time efficiency comparisons
-  - Tree count analysis
+- `run_experiments.py` — experiment configuration generation, single-run execution, parsing of study/log metadata, and dataset-level queue execution;
+- `analyze_experiments.py` — aggregation of `.dill` files, statistical tests, table export, and plotting utilities;
+- `cpu_pinning.py` — Linux-oriented process scheduler with CPU affinity and optional `n_jobs` injection;
+- `file_mover.py` — background mover for completed `.dill`/log files from temporary to persistent storage;
+- `merge_safe.py`, `split_common_params.py` — small utilities for safe parameter handling.
 
 ---
 
@@ -145,41 +156,37 @@ The primary notebook for reproducing all experiments from the paper is [`paper_r
 
 **Minimal fields per dataset key**
 
-* `name`: human-readable title
-* `loader`: how to obtain data (prefixes below)
-* `target`: target column name (**used only when `return_X_y=True`; ignored otherwise**)
-* `ignored_columns` (optional): columns to drop after reading (comma-separated or YAML list)
-* `bib`: BibTeX block for citation
+- `name`: human-readable title;
+- `loader`: how to obtain data;
+- `target`: target column name, used only when `return_X_y=True`;
+- `ignored_columns` (optional): columns to drop after reading;
+- `bib`: BibTeX block for dataset citation.
 
-**Local-first behavior & cache layout**
+**Local-first behavior and cache layout**
 
-* For non-`file` loaders (`sklearn:`, `uci:`, `kaggle-comp:`, `url:`/`http(s)`), the loader
-  looks under `cache/<key>/`. If a file is found, it is loaded and
-  **no network request** is made. Otherwise the dataset is fetched and persisted into
-  `cache/<key>/` (usually as `<key>.csv`), then loaded from disk.
-* For `file` (or `raw`), the loader looks under `raw/<key>/`. We do not auto-read `raw/` for other loader types.
-* Both `raw/` and `cache/` live next to the YAML (i.e. `<yaml_dir>/raw`, `<yaml_dir>/cache`).
+- For non-local loaders (`sklearn:`, `uci:`, `kaggle-comp:`, `url:` / `http(s)`), the loader first checks `cache/<key>/`. If a supported file is found, it is loaded and no network request is made. Otherwise, the dataset is fetched, saved under `cache/<key>/`, and loaded from disk.
+- For `file` or `raw` loaders, the loader checks `raw/<key>/`.
+- We do not auto-read `raw/` for other loader types.
+- Both `raw/` and `cache/` live next to the YAML file, i.e. under `<yaml_dir>/raw` and `<yaml_dir>/cache`.
 
-**UCI column names (important)**
+**UCI column names**
 
-* For `uci:<id>`, on first fetch the loader **attempts** to rename **all columns** to their
-  `variables.description` values from UCI metadata.
-* Descriptions may be missing for some features; in that case we keep the original names for those features while checking uniqueness.
-* The rename is applied **only if** the final set of names is **unique**.
-  Otherwise the **original** column names are kept.
-* Your YAML `target` **must match the actual column name in the saved file**. For example, for `uci:350` (Default of Credit Card Clients), the original variable name is `"Y"`, and the description-based name is `"default payment next month"`. Typically the loader will save the description-based name, so set `target: "default payment next month"`.
+- For `uci:<id>`, on first fetch the loader attempts to rename all columns to their `variables.description` values from UCI metadata.
+- Descriptions may be missing for some features; in that case the original names are kept for those features while checking uniqueness.
+- The rename is applied only if the final set of names is unique. Otherwise the original column names are kept.
+- The YAML `target` must match the actual column name in the saved file. For example, for `uci:350` (Default of Credit Card Clients), the original variable name is `"Y"`, while the description-based name is `"default payment next month"`. Typically the loader saves the description-based name, so the registry sets `target: "default payment next month"`.
 
 **Supported `loader` prefixes**
 
-* `sklearn:sklearn.datasets.<dataset>`
-* `uci:<id>`
-* `url:<http(s)://...>` or plain `http(s)://...`
-* `kaggle-comp:<slug>@<filename>` (Kaggle **Competitions**; `@filename` is optional. If omitted, the loader auto-picks a good candidate — prefers `train.*` among supported formats; rules must be accepted in the Kaggle UI.)
-* `file` (`raw`)
+- `sklearn:sklearn.datasets.<dataset>`;
+- `uci:<id>` via `ucimlrepo`;
+- `url:<http(s)://...>` or a plain `http(s)://...` URL;
+- `kaggle-comp:<slug>@<filename>` for Kaggle competitions (`@filename` is optional; if omitted, the loader attempts to select a suitable file, preferring `train.*` among supported formats);
+- `file` / `raw` for locally stored files.
 
-**Supported on-disk formats:** CSV, TXT, TSV/TAB, `.data` (CSV-like), Parquet, JSON, ARFF, XLS/XLSX.  
+Supported on-disk formats include CSV, TXT, TSV/TAB, `.data`, Parquet, JSON, ARFF, XLS, and XLSX.
 
-**Example (excerpt)**
+**Example**
 
 ```yaml
 datasets:
@@ -198,39 +205,37 @@ datasets:
     name: "Titanic (Kaggle competition)"
     loader: "kaggle-comp:titanic@train.csv"
     target: "Survived"
-    ignored_columns: "PassengerId,Name,Ticket,Cabin"
+    ignored_columns: "PassengerId,Name,Ticket"
 ```
 
-**Ignored columns**  
-You can drop columns right after reading from disk by specifying a comma-separated list
-(or a YAML list). This does not affect fetching/caching — it only modifies the in-memory DataFrame.
-If the target is accidentally included into `ignored_columns` and you call
-`load_dataset(..., return_X_y=True)`, an error will be raised because the target column
-will be missing — this is expected.
+**Ignored columns**
 
-**Local edits & re-fetching**
+You can drop columns right after reading from disk by specifying a comma-separated list or a YAML list. This does not affect fetching/caching; it only modifies the in-memory DataFrame. If the target is accidentally included in `ignored_columns` and you call `load_dataset(..., return_X_y=True)`, an error will be raised because the target column will be missing. This is expected.
 
-* Once a dataset is saved on disk (under `<yaml_dir>/cache/<key>/`), you may edit the CSV header
-  to rename columns manually.
-* The `target` specified in `datasets.yml` **must** match a column name in the saved file;
-  otherwise `load_dataset(..., return_X_y=True)` will raise an error.
-* While a cached file exists, `load_dataset()` will **not** access the network.
-* To force a re-download, delete `<yaml_dir>/cache/<key>/`.
+**Local edits and re-fetching**
 
-## Kaggle setup (for `kaggle-comp:`)
+- Once a dataset is saved on disk under `<yaml_dir>/cache/<key>/`, you may edit the CSV header to rename columns manually.
+- The `target` specified in `datasets.yml` must match a column name in the saved file; otherwise, `load_dataset(..., return_X_y=True)` will raise an error.
+- While a cached file exists, `load_dataset()` will not access the network.
+- To force a re-download, delete `<yaml_dir>/cache/<key>/`.
 
-1. **Create API token:** Kaggle -> **Account -> Create New API Token** -> download `kaggle.json`  
-2. **Place the token:**
-   - Linux/macOS: `~/.kaggle/kaggle.json` (`chmod 700 ~/.kaggle`, `chmod 600 ~/.kaggle/kaggle.json`)
-   - Windows: `C:\Users\<you>\.kaggle\kaggle.json`
-   Or set env vars `KAGGLE_USERNAME` and `KAGGLE_KEY`.
-3. **Competitions only:** open the competition page and **Accept Rules**.
-4. Then you can use `kaggle-comp:` loaders in YAML, and the repository will auto‑download on first use. 
-   We use the Kaggle Python API (no CLI required).
+**Kaggle setup**
+
+1. Create an API token in Kaggle: **Account → Create New API Token**.
+2. Place `kaggle.json` under `~/.kaggle/kaggle.json` on Linux/macOS or `C:\Users\<you>\.kaggle\kaggle.json` on Windows, or set `KAGGLE_USERNAME` and `KAGGLE_KEY`.
+3. For competitions, accept the competition rules in the Kaggle UI.
+4. Then `kaggle-comp:` entries in `data/datasets.yml` can be fetched automatically on first use.
 
 ---
 
-## License & Citation
+## Citation
 
-- License: MIT (`LICENSE`)
-- Citation: see `CITATION.cff`
+If you use this repository in academic work, please cite the accompanying paper using the metadata in [`CITATION.cff`](CITATION.cff).
+
+---
+
+## License
+
+The source code in this repository is distributed under the MIT License. See [`LICENSE`](LICENSE).
+
+The accompanying paper should be used under the terms of the license specified by the paper venue.

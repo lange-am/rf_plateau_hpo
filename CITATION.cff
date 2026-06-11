@@ -1,2 +1,28 @@
 cff-version: 1.2.0
-date-released: 2025-10-13
+message: "If you use this software or the accompanying experiments, please cite the paper listed below."
+title: "rf-plateau-hpo: Random Forest Plateau Search and Optuna Integration"
+version: "0.1.0"
+date-released: 2026-06-07
+repository-code: "https://github.com/lange-am/rf_plateau_hpo"
+url: "https://github.com/lange-am/rf_plateau_hpo"
+license: MIT
+authors:
+  - family-names: Lange
+    given-names: Andrey
+    orcid: "https://orcid.org/0000-0001-6624-4794"
+preferred-citation:
+  type: article
+  title: "How Many Trees in a Random Forest? A Revisited Approach with Plateau Search and Optuna Integration"
+  authors:
+    - family-names: Porvatov
+      given-names: Vadim
+    - family-names: Dukhovny
+      given-names: Andrey
+    - family-names: Lange
+      given-names: Andrey
+      orcid: "https://orcid.org/0000-0001-6624-4794"
+  year: 2026
+  url: "https://arxiv.org/abs/2606.03549"
+  identifiers:
+    - type: other
+      value: "arXiv:2606.03549"
