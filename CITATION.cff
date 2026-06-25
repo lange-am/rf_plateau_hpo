@@ -12,17 +12,20 @@ authors:
     orcid: "https://orcid.org/0000-0001-6624-4794"
 preferred-citation:
   type: article
-  title: "How Many Trees in a Random Forest? A Revisited Approach with Plateau Search and Optuna Integration"
+  title: "How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration"
   authors:
     - family-names: Porvatov
-      given-names: Vadim
+      given-names: Vadim A.
     - family-names: Dukhovny
-      given-names: Andrey
+      given-names: Andrey A.
     - family-names: Lange
-      given-names: Andrey
+      given-names: Andrey M.
       orcid: "https://orcid.org/0000-0001-6624-4794"
+  journal: "IEEE Access"
+  volume: 14
+  start: 93670
+  end: 93693
   year: 2026
-  url: "https://arxiv.org/abs/2606.03549"
-  identifiers:
-    - type: other
-      value: "arXiv:2606.03549"
+  date-published: 2026-06-19
+  doi: "10.1109/ACCESS.2026.3705574"
+  url: "https://ieeexplore.ieee.org/document/11571780"
