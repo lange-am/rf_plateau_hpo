@@ -1,0 +1,93 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Library tests. Installs the runtime dependencies plus pytest only, so that
+  # a notebook-only dependency cannot affect the result.
+  #
+  # The matrix covers both ends of the supported range: on Python 3.8 pip
+  # resolves the last releases that still support it (scikit-learn 1.3,
+  # pandas 2.0), on the newest entry it resolves current ones. A failure at
+  # either end means requires-python in pyproject.toml overstates support.
+  #
+  # Python 3.8 is absent from the ubuntu-24.04 runner image, so that entry
+  # pins ubuntu-22.04. Drop the entry together with Python 3.8 support.
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.8"
+            os: ubuntu-22.04
+          - python-version: "3.11"
+            os: ubuntu-latest
+          - python-version: "3.13"
+            os: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+
+      - name: Show resolved versions
+        run: pip list | grep -Ei "numpy|pandas|scikit-learn|optuna"
+
+      - name: Run tests
+        run: pytest -q
+
+  # Guards the notebook stack: checks that `pip install -e ".[dev]"` still
+  # resolves and that the helper modules in notebooks/ import cleanly. This is
+  # what catches a dependency that has lost wheels for a supported Python.
+  notebooks:
+    name: notebooks import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package with notebook dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Import notebook helper modules
+        working-directory: notebooks
+        env:
+          MPLBACKEND: Agg
+        run: |
+          python -c "import merge_safe, split_common_params, file_mover, cpu_pinning"
+          python -c "import run_experiments, analyze_experiments"
+
+  # Checks that CITATION.cff stays machine-readable. GitHub's "Cite this
+  # repository" button and the Zenodo archive both read this file.
+  citation:
+    name: CITATION.cff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install cffconvert
+      - run: cffconvert --validate
+      - name: Show generated BibTeX
+        run: cffconvert -f bibtex
