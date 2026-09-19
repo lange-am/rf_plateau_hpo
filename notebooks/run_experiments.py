@@ -57,7 +57,7 @@ import pandas as pd
 import scipy.stats as stats
 import seaborn as sns
 
-sns.set(style="whitegrid")
+sns.set_theme(style="whitegrid")
 
 # --- Local / application ---
 from cpu_pinning import run_queue_pinned

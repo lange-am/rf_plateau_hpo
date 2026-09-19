@@ -1,4 +1,4 @@
-"""
+r"""
 analyze_experiments.py
 ----------------------
 
@@ -51,7 +51,7 @@ import pandas as pd
 import scipy.stats as stats
 import seaborn as sns
 
-sns.set(style="whitegrid")
+sns.set_theme(style="whitegrid")
 
 # --- Local / application ---
 
@@ -671,11 +671,11 @@ def process_html_table(
         """Reformat LaTeX math to HTML-compatible format."""
         # Helper functions
         def replace_mathbf(text):
-            """Replace \mathbf{...} with <b>...</b>"""
+            r"""Replace \mathbf{...} with <b>...</b>"""
             return re.sub(r"\\mathbf{(.*?)}", r'<b>\1</b>', text)
 
         def convert_latex_scientific(text):
-            """Convert \times10^{...} to e-notation"""
+            r"""Convert \times10^{...} to e-notation"""
             def replace_exp(match):
                 exp = match.group(1).replace('{', '').replace('}', '')
                 return f"e{exp.lstrip('0') or '0'}" if exp.startswith('-') else f"e+{exp.lstrip('0').lstrip('+') or '0'}"
