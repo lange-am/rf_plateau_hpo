@@ -1,15 +1,49 @@
 cff-version: 1.2.0
-message: "If you use this software or the accompanying experiments, please cite the paper listed below."
-title: "rf-plateau-hpo: Random Forest Plateau Search and Optuna Integration"
+type: software
+message: "If you use this software or the accompanying experiments, please cite the paper listed under preferred-citation."
+title: "rf-plateau-hpo: Adaptive Random Forest n_estimators Tuning with Triplet-Based Plateau Search and Optuna"
+abstract: >-
+  Reference implementation of triplet-based PLATEAU search for selecting a
+  near-minimal sufficient number of trees (n_estimators, ensemble size) in a
+  Random Forest, integrated with Optuna/TPE hyperparameter optimization.
+  Instead of sampling n_estimators from a predefined range, the ensemble size
+  is adapted across HPO trials from relative changes of the out-of-bag score
+  at a geometric triplet of forest sizes, under a user-specified relative
+  tolerance. Includes Hyperband/BOHB-style and fixed-range TPE baselines, a
+  declarative dataset registry, and full reproducibility material for the
+  IEEE Access 2026 paper.
 version: "0.1.0"
 date-released: 2026-06-07
 repository-code: "https://github.com/lange-am/rf_plateau_hpo"
 url: "https://github.com/lange-am/rf_plateau_hpo"
 license: MIT
+keywords:
+  - random forest
+  - number of trees
+  - n_estimators
+  - ensemble size
+  - forest size
+  - plateau search
+  - out-of-bag score
+  - hyperparameter optimization
+  - Optuna
+  - tree-structured Parzen estimator
+  - Hyperband
+  - BOHB
+  - multi-fidelity optimization
+  - scikit-learn
+  - AutoML
 authors:
   - family-names: Lange
-    given-names: Andrey
+    given-names: Andrey M.
     orcid: "https://orcid.org/0000-0001-6624-4794"
+identifiers:
+  - type: doi
+    value: "10.1109/ACCESS.2026.3705574"
+    description: "Journal article describing the method implemented by this software"
+  - type: other
+    value: "arXiv:2606.03549"
+    description: "Preprint of the journal article (open access full text)"
 preferred-citation:
   type: article
   title: "How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration"
@@ -29,3 +63,39 @@ preferred-citation:
   date-published: 2026-06-19
   doi: "10.1109/ACCESS.2026.3705574"
   url: "https://ieeexplore.ieee.org/document/11571780"
+  identifiers:
+    - type: other
+      value: "arXiv:2606.03549"
+      description: "Open access preprint"
+  abstract: >-
+    Hyperparameter optimization for Random Forest faces a specific difficulty
+    in tuning the number of trees: the predictive score typically improves
+    monotonically with ensemble size, so standard methods require a predefined
+    search range and often drive the estimate toward its right boundary. The
+    paper proposes an integrated triplet-based plateau-search algorithm that
+    removes the number of trees from the direct TPE search space while still
+    exploiting information accumulated across optimization trials.
+  keywords:
+    - random forest
+    - number of trees
+    - ensemble size selection
+    - plateau search
+    - out-of-bag score
+    - hyperparameter optimization
+    - Optuna
+references:
+  - type: article
+    title: "A Stationary-Distribution Theory for Triplet-Based Plateau Search in Random Forest Ensemble-Size Selection"
+    authors:
+      - family-names: Dukhovny
+        given-names: Andrey A.
+      - family-names: Lange
+        given-names: Andrey M.
+        orcid: "https://orcid.org/0000-0001-6624-4794"
+    year: 2026
+    url: "https://arxiv.org/abs/2606.30837"
+    identifiers:
+      - type: other
+        value: "arXiv:2606.30837"
+        description: "Preprint"
+    notes: "Theoretical analysis of the stationary distribution of the adaptive ensemble size."
