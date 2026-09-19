@@ -9,6 +9,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 
+📄 **[Project page](https://lange-am.github.io/rf_plateau_hpo/)** · [Paper](https://doi.org/10.1109/ACCESS.2026.3705574) · [Preprint](https://arxiv.org/abs/2606.03549)
+
 **How many trees should a Random Forest use?** This repository answers that
 question with **PLATEAU search** — an adaptive method that finds a
 near-minimal *sufficient* number of trees (`n_estimators`, also called forest

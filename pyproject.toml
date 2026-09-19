@@ -69,6 +69,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/lange-am/rf_plateau_hpo"
+"Project page" = "https://lange-am.github.io/rf_plateau_hpo/"
 Documentation = "https://github.com/lange-am/rf_plateau_hpo#readme"
 Repository = "https://github.com/lange-am/rf_plateau_hpo"
 "Paper (IEEE Access)" = "https://doi.org/10.1109/ACCESS.2026.3705574"

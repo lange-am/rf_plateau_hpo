@@ -1,0 +1,5 @@
+# https://lange-am.github.io/rf_plateau_hpo/
+User-agent: *
+Allow: /
+
+Sitemap: https://lange-am.github.io/rf_plateau_hpo/sitemap.xml
