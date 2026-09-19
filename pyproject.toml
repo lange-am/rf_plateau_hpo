@@ -88,7 +88,7 @@ repro = [
 ]
 
 # Minimal set needed to run the test suite. CI installs this rather than
-# "dev", so a heavy notebook dependency can never turn the badge red.
+# "dev", so that a notebook-only dependency cannot affect the test result.
 test = [
   "pytest>=7.0",
 ]
