@@ -1,0 +1,83 @@
+name: publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to build and publish"
+        required: true
+        default: "v0.1.1"
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade build twine
+
+      - name: Verify tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+        run: |
+          PACKAGE_VERSION="$(python -c 'ns={}; exec(open("src/rf_plateau_hpo/_version.py", encoding="utf-8").read(), ns); print(ns["__version__"])')"
+          test "v${PACKAGE_VERSION}" = "${RELEASE_TAG}" || {
+            echo "Tag ${RELEASE_TAG} does not match package version ${PACKAGE_VERSION}."
+            exit 1
+          }
+
+      - name: Build wheel and source distribution
+        run: python -m build
+
+      - name: Validate distribution metadata
+        run: python -m twine check dist/*
+
+      - name: Smoke-test built wheel
+        run: |
+          python -m venv /tmp/rf-plateau-hpo-wheel-test
+          /tmp/rf-plateau-hpo-wheel-test/bin/python -m pip install --upgrade pip
+          /tmp/rf-plateau-hpo-wheel-test/bin/python -m pip install dist/*.whl
+          /tmp/rf-plateau-hpo-wheel-test/bin/python -c "import rf_plateau_hpo; assert rf_plateau_hpo.__version__ == '0.1.1'"
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rf-plateau-hpo
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.2
