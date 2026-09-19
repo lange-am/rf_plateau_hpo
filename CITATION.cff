@@ -13,7 +13,7 @@ abstract: >-
   declarative dataset registry, and full reproducibility material for the
   IEEE Access 2026 paper.
 version: "0.1.1"
-date-released: 2026-06-07
+date-released: 2026-09-19
 repository-code: "https://github.com/lange-am/rf_plateau_hpo"
 url: "https://github.com/lange-am/rf_plateau_hpo"
 license: MIT
@@ -41,12 +41,6 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.22847391"
     description: "Zenodo archive DOI for this software"
-  - type: doi
-    value: "10.1109/ACCESS.2026.3705574"
-    description: "Journal article describing the method implemented by this software"
-  - type: other
-    value: "arXiv:2606.03549"
-    description: "Preprint of the journal article (open access full text)"
 preferred-citation:
   type: article
   title: "How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration"
@@ -72,8 +66,8 @@ preferred-citation:
       description: "Open access preprint"
   abstract: >-
     Hyperparameter optimization for Random Forest faces a specific difficulty
-    in tuning the number of trees: the predictive score typically improves
-    monotonically with ensemble size, so standard methods require a predefined
+    in tuning the number of trees: the predictive score typically improves or stabilizes
+    as ensemble size grows, so standard methods require a predefined
     search range and often drive the estimate toward its right boundary. The
     paper proposes an integrated triplet-based plateau-search algorithm that
     removes the number of trees from the direct TPE search space while still

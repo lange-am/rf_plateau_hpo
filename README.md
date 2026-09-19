@@ -21,6 +21,7 @@ hyperparameters jointly. It is the reference implementation for the
 ```python
 from rf_plateau_hpo.core import tune_rf_oob_plateau
 
+# Assuming X, y and auc_binary are defined.
 # No [T_min, T_max] range for n_estimators — the tree count is found adaptively.
 model, best_n_estimators, study, plateau_found = tune_rf_oob_plateau(
     X, y, problem="clf", score_func=auc_binary, greater_is_better=True,
@@ -37,8 +38,9 @@ Tuning `n_estimators` over a fixed range `[T_min, T_max]` is often ill-suited:
 predictive performance usually improves or stabilizes as trees are added, so
 hyperparameter optimization tends to push `n_estimators` toward `T_max`.
 Too small a `T_max` may be insufficient; too large a value wastes computation.
-There is no interior optimum to find, so TPE, random search, grid search and
-Hyperband all inherit the arbitrariness of the range you typed in.
+The ensemble-size objective typically approaches a plateau rather than
+exhibiting a meaningful interior optimum, so TPE, random search, grid search,
+and Hyperband remain sensitive to the range you specify.
 
 **PLATEAU search** replaces this fixed-range search with adaptive ensemble-size
 selection. It evaluates out-of-bag (OOB) scores at geometrically spaced tree
@@ -47,8 +49,8 @@ specified **relative tolerance** ε (`delta` in the API).
 
 Rather than defining the "optimal number of trees" as the best value inside an
 arbitrary hyperparameter range, PLATEAU uses tolerance-based adaptive search:
-it stops where substantially more trees would buy only tolerance-level score
-changes.
+it seeks an ensemble-size region where substantially more trees yield only
+tolerance-level score changes.
 
 ---
 
@@ -64,7 +66,7 @@ and Optuna Integration,”**
 - DOI: [10.1109/ACCESS.2026.3705574](https://doi.org/10.1109/ACCESS.2026.3705574)
 - IEEE Xplore: [document 11571780](https://ieeexplore.ieee.org/document/11571780)
 - Preprint (free full text): [arXiv:2606.03549](https://arxiv.org/abs/2606.03549)
-  · [PDF](https://arxiv.org/pdf/2606.03549) · [HTML](https://arxiv.org/abs/2606.03549v1)
+  · [PDF](https://arxiv.org/pdf/2606.03549) · [v1](https://arxiv.org/abs/2606.03549v1)
 
 The paper introduces triplet-based PLATEAU search for adaptive `n_estimators`
 selection and joint Random Forest hyperparameter tuning with Optuna/TPE, and
@@ -120,8 +122,8 @@ only a safety bound on feasible ensemble sizes.
 There is no universal number. The answer depends on the dataset, the scoring
 metric, the other hyperparameters (tree depth, `max_features`), and on how much
 score change you are willing to ignore. PLATEAU search makes that last quantity
-explicit: you specify a relative tolerance ε, and the algorithm returns a
-near-minimal ensemble size that meets it.
+explicit: you specify a relative tolerance ε, and the algorithm seeks a
+near-minimal sufficient ensemble size at that tolerance.
 
 ### Is the scikit-learn default of `n_estimators=100` enough?
 
@@ -178,9 +180,8 @@ empirically.
 Research on the number of trees in a Random Forest goes back to Breiman (2001)
 and includes Oshiro, Perez and Baranauskas (2012), *How Many Trees in a Random
 Forest?*, Latinne et al. (2001), Hernández-Lobato et al. (2013), and the
-tuning survey of Probst, Wright and Boulesteix (2019). These works study *how
-many trees are needed* on its own, or fix the remaining hyperparameters while
-doing so.
+tuning survey of Probst, Wright and Boulesteix (2019). These works study forest size and related Random Forest tuning questions,
+typically separately from joint adaptive ensemble-size selection within HPO.
 
 The contribution here is to treat the ensemble size and the other Random Forest
 hyperparameters as interdependent, and to resolve both inside a single
@@ -494,10 +495,3 @@ GitHub renders it under **Cite this repository** in the sidebar.
 The source code in this repository is distributed under the MIT License. See [`LICENSE`](LICENSE).
 
 The accompanying paper should be used under the terms of the license specified by the paper venue.
-
----
-
-<sub>Keywords: random forest number of trees · optimal n_estimators ·
-ensemble size selection · forest size · ntree · out-of-bag error plateau ·
-hyperparameter optimization · Optuna · TPE · Hyperband · BOHB · multi-fidelity
-optimization · scikit-learn · AutoML · adaptive budget allocation.</sub>

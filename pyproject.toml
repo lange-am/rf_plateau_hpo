@@ -4,16 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rf-plateau-hpo"
-version = "0.1.1"
-# This one-line summary is what PyPI shows in search results. Keep the key
-# terms ("Random Forest", "n_estimators", "number of trees", "Optuna") in it.
+dynamic = ["version"]
 description = "Adaptive n_estimators tuning for Random Forest: triplet-based OOB plateau search integrated with Optuna/TPE"
 readme = "README.md"
 
-# Python 3.8 is kept: nothing in the code base needs anything newer, and every
-# dependency below still resolves there (scikit-learn 1.3.2, pandas 2.0.3,
-# numpy 1.24.4). Dropping it would only inconvenience users on older cluster
-# environments. CI runs the test suite on 3.8 so this stays a checked claim.
+# Python 3.8 remains supported and is covered by CI.
 requires-python = ">=3.8"
 
 license = { text = "MIT" }
@@ -59,11 +54,8 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-# With lower bounds only, pip picks whatever fits the user's Python:
-# scikit-learn 1.3.2 on Python 3.8, scikit-learn 1.8 on Python 3.13.
-# The exact versions used for the paper are preserved in the "repro" extra.
-#
-# Verified working: numpy 2.4, pandas 3.0, scikit-learn 1.8, Optuna 5.0.
+# Runtime lower bounds let pip select versions compatible with the user's Python.
+# Reproduction-oriented compatibility bounds are available in the "repro" extra.
 dependencies = [
   "numpy>=1.21",
   "pandas>=1.4",
@@ -86,9 +78,8 @@ Repository = "https://github.com/lange-am/rf_plateau_hpo"
 "Bug Tracker" = "https://github.com/lange-am/rf_plateau_hpo/issues"
 
 [project.optional-dependencies]
-# Versions used to produce the results reported in the IEEE Access paper.
-# These require Python <= 3.12: numpy 1.x, pandas 2.1 and scikit-learn 1.3
-# publish no wheels for 3.13.
+# Compatibility bounds for reproducing the IEEE Access experiments.
+# This dependency generation may not resolve on the newest Python releases.
 repro = [
   "numpy>=1.21,<2.0",
   "pandas>=1.4,<2.2",
@@ -103,8 +94,6 @@ test = [
 ]
 
 # Everything needed to run notebooks/ and reproduce the figures and tables.
-# Lower bounds only, for the same reason as the runtime dependencies: this
-# set resolves on every Python from 3.8 to 3.14.
 dev = [
   # Data sources (optional)
   "kaggle>=1.6.0",
@@ -122,8 +111,7 @@ dev = [
   # For parquet/xlsx/xls/arff
   "pyarrow>=14",
   "openpyxl>=3.1",
-  # xlrd 2.0 dropped .xls support, which the dataset loader still needs.
-  # This cap is deliberate, unlike the ones removed above.
+  # xlrd 2.0 dropped .xls support; the dataset loader still needs it.
   "xlrd<2.0",
   "liac-arff>=2.5",
   # Testing
@@ -133,6 +121,9 @@ dev = [
 [tool.setuptools]
 package-dir = { "" = "src" }
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "rf_plateau_hpo._version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -93,6 +93,13 @@ def test_dataset_loader_is_importable():
     assert callable(load_dataset)
 
 
+def test_package_version_matches_distribution_metadata():
+    import rf_plateau_hpo
+    from importlib.metadata import version
+
+    assert rf_plateau_hpo.__version__ == version("rf-plateau-hpo")
+
+
 @pytest.mark.parametrize(
     "func", [tune_rf_oob, tune_rf_oob_bohb, tune_rf_oob_plateau]
 )

@@ -6,7 +6,7 @@
 <title>How Many Trees in a Random Forest? Adaptive n_estimators Tuning with Plateau Search and Optuna</title>
 <meta name="description" content="How many trees does a Random Forest need? PLATEAU search finds a near-minimal sufficient n_estimators from out-of-bag scores while Optuna tunes the remaining hyperparameters. Open-source Python code for the IEEE Access 2026 paper.">
 <link rel="canonical" href="https://lange-am.github.io/rf_plateau_hpo/">
-<meta name="author" content="Vadim A. Porvatov, Andrey A. Dukhovny, Andrey M. Lange">
+<meta name="author" content="Andrey M. Lange">
 <meta name="citation_title" content="How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration">
 <meta name="citation_author" content="Porvatov, Vadim A.">
 <meta name="citation_author" content="Dukhovny, Andrey A.">
@@ -66,10 +66,9 @@
 <h2>The problem with tuning <code>n_estimators</code> over a range</h2>
 <p>
   Predictive performance of a Random Forest usually improves or stabilizes as trees are added.
-  There is no interior optimum, so any hyperparameter optimizer — grid search, random search,
-  TPE, Hyperband — pushes the number of trees toward whatever <code>T_max</code> you typed in.
-  Too small a bound is insufficient; too large a bound wastes computation. The result depends on
-  a guess, not on the data.
+  The ensemble-size objective typically approaches a plateau rather than exhibiting a meaningful
+  interior optimum, so grid search, random search, TPE and Hyperband remain sensitive to the
+  range you specify. Too small a bound may be insufficient; too large a bound wastes computation.
 </p>
 
 <h2>What PLATEAU search does instead</h2>
@@ -111,7 +110,7 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
 <p>
   There is no universal number. It depends on the dataset, the scoring metric, the other
   hyperparameters, and on how much score change you are willing to ignore. PLATEAU search makes
-  that last quantity explicit and returns a near-minimal ensemble size meeting it.
+  that last quantity explicit and seeks a near-minimal sufficient ensemble size at that tolerance.
 </p>
 
 <h3>Is the scikit-learn default of 100 trees enough?</h3>
@@ -161,9 +160,10 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
 <p>
   The question goes back to Breiman (2001) and was studied empirically by Oshiro, Perez and
   Baranauskas (2012), Latinne et al. (2001), Hernández-Lobato et al. (2013), and Probst, Wright
-  and Boulesteix (2019). Those works ask how many trees are needed with the remaining
-  hyperparameters held fixed. The contribution here is to treat ensemble size and the other
-  Random Forest hyperparameters as interdependent and to resolve both inside a single Optuna run.
+  and Boulesteix (2019). These works study forest size and related Random Forest tuning questions,
+  typically separately from joint adaptive ensemble-size selection within HPO. The contribution
+  here is to treat ensemble size and the other Random Forest hyperparameters as interdependent
+  and to resolve both inside a single Optuna run.
 </p>
 
 <footer>
@@ -194,7 +194,7 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
       "identifier": "https://doi.org/10.1109/ACCESS.2026.3705574",
       "sameAs": ["https://arxiv.org/abs/2606.03549", "https://ieeexplore.ieee.org/document/11571780"],
       "keywords": "random forest, number of trees, n_estimators, ensemble size, plateau search, out-of-bag score, hyperparameter optimization, Optuna, TPE, Hyperband",
-      "abstract": "Hyperparameter optimization for Random Forest faces a specific difficulty in tuning the number of trees: the predictive score typically improves monotonically with ensemble size, so standard methods require a predefined search range and often drive the estimate toward its right boundary. The paper proposes an integrated triplet-based plateau-search algorithm that removes the number of trees from the direct TPE search space while still exploiting information accumulated across optimization trials."
+      "abstract": "Hyperparameter optimization for Random Forest faces a specific difficulty in tuning the number of trees: the predictive score typically improves or stabilizes as ensemble size grows, so standard methods require a predefined search range and often drive the estimate toward its right boundary. The paper proposes an integrated triplet-based plateau-search algorithm that removes the number of trees from the direct TPE search space while still exploiting information accumulated across optimization trials."
     },
     {
       "@type": "SoftwareSourceCode",
@@ -202,6 +202,9 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
       "description": "Adaptive n_estimators tuning for Random Forest: triplet-based OOB plateau search integrated with Optuna/TPE.",
       "codeRepository": "https://github.com/lange-am/rf_plateau_hpo",
       "programmingLanguage": "Python",
+      "author": { "@type": "Person", "name": "Andrey M. Lange", "identifier": "https://orcid.org/0000-0001-6624-4794" },
+      "version": "0.1.1",
+      "identifier": "https://doi.org/10.5281/zenodo.22847391",
       "license": "https://opensource.org/licenses/MIT",
       "citation": "https://doi.org/10.1109/ACCESS.2026.3705574"
     },
@@ -211,7 +214,7 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
         {
           "@type": "Question",
           "name": "How many trees does a Random Forest need?",
-          "acceptedAnswer": { "@type": "Answer", "text": "There is no universal number. It depends on the dataset, the scoring metric, the other hyperparameters, and on how much score change you are willing to ignore. Plateau search makes that tolerance explicit and returns a near-minimal ensemble size meeting it." }
+          "acceptedAnswer": { "@type": "Answer", "text": "There is no universal number. It depends on the dataset, the scoring metric, the other hyperparameters, and on how much score change you are willing to ignore. Plateau search makes that tolerance explicit and seeks a near-minimal sufficient ensemble size at that tolerance." }
         },
         {
           "@type": "Question",
