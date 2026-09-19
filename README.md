@@ -1,5 +1,6 @@
 # How Many Trees in a Random Forest? Adaptive `n_estimators` Tuning with PLATEAU Search and Optuna
 
+[![tests](https://github.com/lange-am/rf_plateau_hpo/actions/workflows/ci.yml/badge.svg)](https://github.com/lange-am/rf_plateau_hpo/actions/workflows/ci.yml)
 [![arXiv (method)](https://img.shields.io/badge/arXiv-2606.03549-b31b1b.svg)](https://arxiv.org/abs/2606.03549)
 [![arXiv (theory)](https://img.shields.io/badge/arXiv-2606.30837-b31b1b.svg)](https://arxiv.org/abs/2606.30837)
 [![DOI](https://img.shields.io/badge/DOI-10.1109%2FACCESS.2026.3705574-blue.svg)](https://doi.org/10.1109/ACCESS.2026.3705574)
