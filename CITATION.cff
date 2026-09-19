@@ -39,6 +39,9 @@ authors:
     orcid: "https://orcid.org/0000-0001-6624-4794"
 identifiers:
   - type: doi
+    value: "10.5281/zenodo.22847391"
+    description: "Zenodo archive DOI for this software"
+  - type: doi
     value: "10.1109/ACCESS.2026.3705574"
     description: "Journal article describing the method implemented by this software"
   - type: other

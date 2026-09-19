@@ -19,8 +19,6 @@ requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
   { name = "Andrey M. Lange" },
-  { name = "Vadim A. Porvatov" },
-  { name = "Andrey A. Dukhovny" },
 ]
 maintainers = [{ name = "Andrey M. Lange" }]
 keywords = [
