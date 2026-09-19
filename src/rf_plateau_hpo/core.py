@@ -926,7 +926,7 @@ def tune_rf_oob_plateau(
         Geometric spacing (> 1) between the triplet points.
     delta : float, default=1e-3
         Relative tolerance in plateau checks: `abs(a-b)/max(|b|, eps) <= delta`.
-    max_trees : int, default=10000
+    max_trees : int, default=100000
         Upper bound for feasible tree counts.
 
     sampler : optuna.samplers.BaseSampler or None, default=None
