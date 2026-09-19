@@ -109,10 +109,6 @@ standard Optuna tuning of `n_estimators`, PLATEAU does not require a sampled
 hyperparameter range `[T_min, T_max]` for the number of trees. `max_trees` is
 only a safety bound on feasible ensemble sizes.
 
-<!-- Add the trajectory figure here once it is committed, e.g.:
-![PLATEAU trajectories: the central triplet point across Optuna trials, converging to a sufficient number of trees](figures/plateau_trajectories.png)
--->
-
 ---
 
 ## Frequently asked questions
