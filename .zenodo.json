@@ -1,0 +1,62 @@
+{
+  "title": "rf-plateau-hpo: Adaptive Random Forest n_estimators Tuning with Triplet-Based Plateau Search and Optuna",
+  "upload_type": "software",
+  "license": "MIT",
+  "description": "<p>Reference implementation of triplet-based PLATEAU search for selecting a near-minimal sufficient number of trees (<code>n_estimators</code>, ensemble size) in a Random Forest, integrated with Optuna/TPE hyperparameter optimization.</p><p>Instead of sampling <code>n_estimators</code> from a predefined range, the ensemble size is adapted across optimization trials from relative changes of the out-of-bag score at a geometric triplet of forest sizes, under a user-specified relative tolerance. The package also provides fixed-range TPE and Hyperband/BOHB-style baselines, a declarative dataset registry, and the full reproducibility material for the IEEE Access 2026 paper.</p>",
+  "creators": [
+    {
+      "name": "Lange, Andrey M.",
+      "orcid": "0000-0001-6624-4794"
+    },
+    {
+      "name": "Porvatov, Vadim A."
+    },
+    {
+      "name": "Dukhovny, Andrey A."
+    }
+  ],
+  "keywords": [
+    "random forest",
+    "number of trees",
+    "n_estimators",
+    "ensemble size selection",
+    "plateau search",
+    "out-of-bag score",
+    "hyperparameter optimization",
+    "Optuna",
+    "tree-structured Parzen estimator",
+    "Hyperband",
+    "BOHB",
+    "multi-fidelity optimization",
+    "scikit-learn",
+    "AutoML"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.1109/ACCESS.2026.3705574",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-article",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "arXiv:2606.03549",
+      "relation": "isSupplementTo",
+      "resource_type": "publication-preprint",
+      "scheme": "arxiv"
+    },
+    {
+      "identifier": "arXiv:2606.30837",
+      "relation": "isSupplementedBy",
+      "resource_type": "publication-preprint",
+      "scheme": "arxiv"
+    },
+    {
+      "identifier": "https://github.com/lange-am/rf_plateau_hpo",
+      "relation": "isSupplementTo",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ],
+  "language": "eng",
+  "access_right": "open"
+}
