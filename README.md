@@ -211,8 +211,16 @@ The Python package **`rf_plateau_hpo`** contains:
 
 ## Installation
 
+For regular use, install the package from PyPI:
+
 ```bash
-# from the repository root
+pip install rf-plateau-hpo
+```
+
+For development or to run the full notebook/reproducibility stack from a
+repository clone, install the `dev` extra instead:
+
+```bash
 pip install -e ".[dev]"
 ```
 
