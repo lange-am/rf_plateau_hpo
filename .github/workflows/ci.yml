@@ -69,13 +69,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Import notebook helper modules
+      - name: Check that every helper module imports
         working-directory: notebooks
         env:
           MPLBACKEND: Agg
         run: |
           python -c "import merge_safe, split_common_params, file_mover, cpu_pinning"
           python -c "import run_experiments, analyze_experiments"
+
+      - name: Run the notebook-side test suite
+        env:
+          MPLBACKEND: Agg
+        run: pytest tests/test_notebooks.py -q
 
   # Checks that CITATION.cff stays machine-readable. GitHub's "Cite this
   # repository" button and the Zenodo archive both read this file.

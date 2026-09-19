@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Many Trees in a Random Forest? Adaptive n_estimators Tuning with Plateau Search and Optuna</title>
+<meta name="description" content="How many trees does a Random Forest need? PLATEAU search finds a near-minimal sufficient n_estimators from out-of-bag scores while Optuna tunes the remaining hyperparameters. Open-source Python code for the IEEE Access 2026 paper.">
+<link rel="canonical" href="https://lange-am.github.io/rf_plateau_hpo/">
+<meta name="author" content="Vadim A. Porvatov, Andrey A. Dukhovny, Andrey M. Lange">
+<meta name="citation_title" content="How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration">
+<meta name="citation_author" content="Porvatov, Vadim A.">
+<meta name="citation_author" content="Dukhovny, Andrey A.">
+<meta name="citation_author" content="Lange, Andrey M.">
+<meta name="citation_journal_title" content="IEEE Access">
+<meta name="citation_volume" content="14">
+<meta name="citation_firstpage" content="93670">
+<meta name="citation_lastpage" content="93693">
+<meta name="citation_publication_date" content="2026">
+<meta name="citation_doi" content="10.1109/ACCESS.2026.3705574">
+<meta name="citation_arxiv_id" content="2606.03549">
+<meta name="citation_pdf_url" content="https://arxiv.org/pdf/2606.03549">
+<meta property="og:type" content="article">
+<meta property="og:title" content="How Many Trees in a Random Forest? Adaptive n_estimators Tuning with Plateau Search and Optuna">
+<meta property="og:description" content="PLATEAU search finds a near-minimal sufficient number of trees from out-of-bag scores while Optuna/TPE tunes the remaining Random Forest hyperparameters.">
+<meta property="og:url" content="https://lange-am.github.io/rf_plateau_hpo/">
+<meta name="twitter:card" content="summary">
+<style>
+  :root { --fg:#16191d; --muted:#5b6672; --bg:#ffffff; --accent:#0b5fa5; --line:#e3e7ec; --code:#f5f7f9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e6e9ed; --muted:#9aa5b1; --bg:#14171a; --accent:#6bb3f0; --line:#2a2f35; --code:#1c2126; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1 { font-size: 2rem; line-height:1.2; margin:0 0 .4em; letter-spacing:-.02em; }
+  h2 { font-size: 1.3rem; margin: 2.2em 0 .6em; letter-spacing:-.01em; }
+  h3 { font-size: 1.05rem; margin: 1.6em 0 .3em; }
+  p, li { color: var(--fg); }
+  .lede { font-size: 1.12rem; color: var(--muted); }
+  a { color: var(--accent); }
+  .badges a { display:inline-block; margin: 0 8px 8px 0; padding: 4px 10px; border:1px solid var(--line);
+              border-radius: 999px; font-size:.85rem; text-decoration:none; }
+  pre { background: var(--code); border:1px solid var(--line); border-radius:8px;
+        padding: 14px 16px; overflow-x:auto; font-size:.88rem; line-height:1.5; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code { background: var(--code); padding: 1px 5px; border-radius:4px; font-size:.9em; }
+  .cite { border-left:3px solid var(--line); padding-left:16px; color:var(--muted); font-size:.95rem; }
+  footer { margin-top:64px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+  hr { border:0; border-top:1px solid var(--line); margin: 2.5em 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>How Many Trees in a Random Forest?</h1>
+<p class="lede">Adaptive <code>n_estimators</code> tuning with triplet-based PLATEAU search and Optuna — the open-source implementation accompanying the IEEE&nbsp;Access&nbsp;2026 paper.</p>
+
+<p class="badges">
+  <a href="https://github.com/lange-am/rf_plateau_hpo">Code on GitHub</a>
+  <a href="https://doi.org/10.1109/ACCESS.2026.3705574">Paper (IEEE Access)</a>
+  <a href="https://arxiv.org/abs/2606.03549">Preprint (arXiv)</a>
+  <a href="https://arxiv.org/abs/2606.30837">Theory (arXiv)</a>
+</p>
+
+<h2>The problem with tuning <code>n_estimators</code> over a range</h2>
+<p>
+  Predictive performance of a Random Forest usually improves or stabilizes as trees are added.
+  There is no interior optimum, so any hyperparameter optimizer — grid search, random search,
+  TPE, Hyperband — pushes the number of trees toward whatever <code>T_max</code> you typed in.
+  Too small a bound is insufficient; too large a bound wastes computation. The result depends on
+  a guess, not on the data.
+</p>
+
+<h2>What PLATEAU search does instead</h2>
+<p>
+  PLATEAU search removes the number of trees from the sampled search space entirely. For a
+  current ensemble size <code>B</code> and scale factor <code>sf</code>, it evaluates the
+  approximately geometric triplet <code>B/sf</code>, <code>B</code>, <code>B*sf</code> and
+  compares out-of-bag (OOB) scores across it. Relative score changes decide whether the triplet
+  shifts left, stays, or shifts right; meanwhile Optuna/TPE tunes the remaining Random Forest
+  hyperparameters. The triplet settles around an ensemble size where substantially more trees
+  buy only tolerance-level score changes.
+</p>
+<p>
+  You specify a relative tolerance ε (<code>delta</code>) — the score change you are willing to
+  treat as negligible — instead of a range you cannot justify.
+</p>
+
+<h2>Install and run</h2>
+<pre><code>pip install -e ".[dev]"</code></pre>
+<pre><code>from rf_plateau_hpo.core import tune_rf_oob_plateau
+from sklearn.datasets import load_breast_cancer
+from sklearn.metrics import roc_auc_score
+
+X, y = load_breast_cancer(return_X_y=True)
+auc = lambda y_true, proba: roc_auc_score(y_true, proba[:, 1])
+
+model, best_n_estimators, study, plateau_found = tune_rf_oob_plateau(
+    X, y, problem="clf", score_func=auc, greater_is_better=True,
+    n_estimators_start=100, scale_factor=1.5, delta=1e-3,
+    max_trees=100000, n_trials=20, random_state=42, n_jobs=-1,
+)
+print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre>
+
+<hr>
+
+<h2>Frequently asked questions</h2>
+
+<h3>How many trees does a Random Forest need?</h3>
+<p>
+  There is no universal number. It depends on the dataset, the scoring metric, the other
+  hyperparameters, and on how much score change you are willing to ignore. PLATEAU search makes
+  that last quantity explicit and returns a near-minimal ensemble size meeting it.
+</p>
+
+<h3>Is the scikit-learn default of 100 trees enough?</h3>
+<p>
+  Sometimes — but it is a default, not a decision. Whether 100 trees suffice is exactly what the
+  plateau criterion tests, and the sufficient size also depends on the other hyperparameters
+  being tuned at the same time.
+</p>
+
+<h3>Can too many trees make a Random Forest overfit?</h3>
+<p>
+  Adding trees mainly reduces variance rather than increasing capacity, so the score typically
+  improves and then flattens. The cost of an oversized forest is computational: training time,
+  memory, and inference latency.
+</p>
+
+<h3>What range should I give Optuna for <code>n_estimators</code>?</h3>
+<p>
+  With PLATEAU search, none. You give a starting size, a scale factor, a tolerance, and a safety
+  bound; the number of trees is never sampled from a range.
+</p>
+
+<h3>How is this different from out-of-bag early stopping?</h3>
+<p>
+  Early stopping reads a single score curve and can be sensitive to noise and prone to premature
+  stopping. PLATEAU search accumulates information across optimization trials and uses a triplet
+  of forest sizes, so the tree count and the other hyperparameters adapt to each other.
+</p>
+
+<hr>
+
+<h2>Papers</h2>
+<p class="cite">
+  V. A. Porvatov, A. A. Dukhovny, and A. M. Lange,
+  “How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna
+  Integration,” <em>IEEE Access</em>, vol. 14, pp. 93670–93693, 2026.
+  <a href="https://doi.org/10.1109/ACCESS.2026.3705574">doi:10.1109/ACCESS.2026.3705574</a> ·
+  <a href="https://arxiv.org/abs/2606.03549">arXiv:2606.03549</a>
+</p>
+<p class="cite">
+  A. A. Dukhovny and A. M. Lange, “A Stationary-Distribution Theory for Triplet-Based Plateau
+  Search in Random Forest Ensemble-Size Selection,” 2026.
+  <a href="https://arxiv.org/abs/2606.30837">arXiv:2606.30837</a>
+</p>
+
+<h2>Related work</h2>
+<p>
+  The question goes back to Breiman (2001) and was studied empirically by Oshiro, Perez and
+  Baranauskas (2012), Latinne et al. (2001), Hernández-Lobato et al. (2013), and Probst, Wright
+  and Boulesteix (2019). Those works ask how many trees are needed with the remaining
+  hyperparameters held fixed. The contribution here is to treat ensemble size and the other
+  Random Forest hyperparameters as interdependent and to resolve both inside a single Optuna run.
+</p>
+
+<footer>
+  Code released under the MIT License · <a href="https://github.com/lange-am/rf_plateau_hpo">github.com/lange-am/rf_plateau_hpo</a>
+</footer>
+
+</main>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "ScholarlyArticle",
+      "@id": "https://doi.org/10.1109/ACCESS.2026.3705574",
+      "headline": "How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration",
+      "name": "How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration",
+      "author": [
+        { "@type": "Person", "name": "Vadim A. Porvatov" },
+        { "@type": "Person", "name": "Andrey A. Dukhovny" },
+        { "@type": "Person", "name": "Andrey M. Lange", "identifier": "https://orcid.org/0000-0001-6624-4794" }
+      ],
+      "datePublished": "2026",
+      "isPartOf": { "@type": "Periodical", "name": "IEEE Access" },
+      "volumeNumber": "14",
+      "pageStart": "93670",
+      "pageEnd": "93693",
+      "identifier": "https://doi.org/10.1109/ACCESS.2026.3705574",
+      "sameAs": ["https://arxiv.org/abs/2606.03549", "https://ieeexplore.ieee.org/document/11571780"],
+      "keywords": "random forest, number of trees, n_estimators, ensemble size, plateau search, out-of-bag score, hyperparameter optimization, Optuna, TPE, Hyperband",
+      "abstract": "Hyperparameter optimization for Random Forest faces a specific difficulty in tuning the number of trees: the predictive score typically improves monotonically with ensemble size, so standard methods require a predefined search range and often drive the estimate toward its right boundary. The paper proposes an integrated triplet-based plateau-search algorithm that removes the number of trees from the direct TPE search space while still exploiting information accumulated across optimization trials."
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "rf-plateau-hpo",
+      "description": "Adaptive n_estimators tuning for Random Forest: triplet-based OOB plateau search integrated with Optuna/TPE.",
+      "codeRepository": "https://github.com/lange-am/rf_plateau_hpo",
+      "programmingLanguage": "Python",
+      "license": "https://opensource.org/licenses/MIT",
+      "citation": "https://doi.org/10.1109/ACCESS.2026.3705574"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many trees does a Random Forest need?",
+          "acceptedAnswer": { "@type": "Answer", "text": "There is no universal number. It depends on the dataset, the scoring metric, the other hyperparameters, and on how much score change you are willing to ignore. Plateau search makes that tolerance explicit and returns a near-minimal ensemble size meeting it." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is the scikit-learn default of 100 trees enough?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Sometimes, but it is a default rather than a decision. Whether 100 trees suffice is what the plateau criterion tests, and the sufficient size also depends on the other hyperparameters being tuned at the same time." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can too many trees make a Random Forest overfit?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Adding trees mainly reduces variance rather than increasing capacity, so the score typically improves and then flattens. The cost of an oversized forest is computational: training time, memory and inference latency." }
+        },
+        {
+          "@type": "Question",
+          "name": "What range should I give Optuna for n_estimators?",
+          "acceptedAnswer": { "@type": "Answer", "text": "With plateau search, none. You give a starting size, a scale factor, a relative tolerance and a safety bound; the number of trees is never sampled from a predefined range." }
+        },
+        {
+          "@type": "Question",
+          "name": "How is plateau search different from out-of-bag early stopping?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Early stopping reads a single score curve and can be sensitive to noise and prone to premature stopping. Plateau search accumulates information across optimization trials and uses a triplet of forest sizes, so the tree count and the other hyperparameters adapt to each other." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</body>
+</html>

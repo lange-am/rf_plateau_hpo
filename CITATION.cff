@@ -12,7 +12,7 @@ abstract: >-
   tolerance. Includes Hyperband/BOHB-style and fixed-range TPE baselines, a
   declarative dataset registry, and full reproducibility material for the
   IEEE Access 2026 paper.
-version: "0.1.0"
+version: "0.1.1"
 date-released: 2026-06-07
 repository-code: "https://github.com/lange-am/rf_plateau_hpo"
 url: "https://github.com/lange-am/rf_plateau_hpo"
