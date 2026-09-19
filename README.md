@@ -1,13 +1,15 @@
 # How Many Trees in a Random Forest? Adaptive `n_estimators` Tuning with PLATEAU Search and Optuna
 
 [![tests](https://github.com/lange-am/rf_plateau_hpo/actions/workflows/ci.yml/badge.svg)](https://github.com/lange-am/rf_plateau_hpo/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/rf-plateau-hpo.svg)](https://pypi.org/project/rf-plateau-hpo/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![arXiv (method)](https://img.shields.io/badge/arXiv-2606.03549-b31b1b.svg)](https://arxiv.org/abs/2606.03549)
 [![arXiv (theory)](https://img.shields.io/badge/arXiv-2606.30837-b31b1b.svg)](https://arxiv.org/abs/2606.30837)
 [![DOI](https://img.shields.io/badge/DOI-10.1109%2FACCESS.2026.3705574-blue.svg)](https://doi.org/10.1109/ACCESS.2026.3705574)
 [![IEEE Access](https://img.shields.io/badge/IEEE%20Access-Open%20Access-00629B.svg)](https://ieeexplore.ieee.org/document/11571780)
 [![Zenodo](https://zenodo.org/badge/DOI/10.5281/zenodo.22847391.svg)](https://doi.org/10.5281/zenodo.22847391)
+[![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/lange-am/rf_plateau_hpo/)](https://archive.softwareheritage.org/browse/origin/https://github.com/lange-am/rf_plateau_hpo/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 
 📄 **[Project page](https://lange-am.github.io/rf_plateau_hpo/)** · [Paper](https://doi.org/10.1109/ACCESS.2026.3705574) · [Preprint](https://arxiv.org/abs/2606.03549)
 
