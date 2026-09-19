@@ -49,11 +49,13 @@ jobs:
         run: python -m twine check dist/*
 
       - name: Smoke-test built wheel
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
         run: |
           python -m venv /tmp/rf-plateau-hpo-wheel-test
           /tmp/rf-plateau-hpo-wheel-test/bin/python -m pip install --upgrade pip
           /tmp/rf-plateau-hpo-wheel-test/bin/python -m pip install dist/*.whl
-          /tmp/rf-plateau-hpo-wheel-test/bin/python -c "import rf_plateau_hpo; assert rf_plateau_hpo.__version__ == '0.1.1'"
+          /tmp/rf-plateau-hpo-wheel-test/bin/python -c "import os, rf_plateau_hpo; assert 'v' + rf_plateau_hpo.__version__ == os.environ['RELEASE_TAG']"
 
       - name: Upload distributions
         uses: actions/upload-artifact@v7
