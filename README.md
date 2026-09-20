@@ -11,14 +11,15 @@
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/lange-am/rf_plateau_hpo/)](https://archive.softwareheritage.org/browse/origin/https://github.com/lange-am/rf_plateau_hpo/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-📄 **[Project page](https://lange-am.github.io/rf_plateau_hpo/)** · [Paper](https://doi.org/10.1109/ACCESS.2026.3705574) · [Preprint](https://arxiv.org/abs/2606.03549)
+🚀 **[Quickstart notebook](notebooks/quickstart.ipynb)** · 📄 [Project page](https://lange-am.github.io/rf_plateau_hpo/) · [Paper](https://doi.org/10.1109/ACCESS.2026.3705574) · [Preprint](https://arxiv.org/abs/2606.03549)
 
-**How many trees should a Random Forest use?** This repository answers that
-question with **PLATEAU search** — an adaptive method that finds a
-near-minimal *sufficient* number of trees (`n_estimators`, also called forest
-size, ensemble size, or `ntree` / `num.trees` in R) instead of searching a
-guessed range, while **Optuna/TPE** tunes the remaining Random Forest
-hyperparameters jointly. It is the reference implementation for the
+**How many trees should a Random Forest use?** Stop guessing a range for
+`n_estimators`. **PLATEAU search** moves along the tree-count axis until
+substantially more trees stop buying meaningful OOB score, while **Optuna/TPE**
+tunes the remaining Random Forest hyperparameters. No sampled `[T_min, T_max]`
+range.
+
+It is the reference implementation for the
 [IEEE Access 2026 paper](https://doi.org/10.1109/ACCESS.2026.3705574)
 ([arXiv:2606.03549](https://arxiv.org/abs/2606.03549)).
 
@@ -38,25 +39,25 @@ print(best_n_estimators)   # near-minimal sufficient number of trees
 
 ## Why tuning `n_estimators` over a fixed range is the wrong tool
 
-Tuning `n_estimators` over a fixed range `[T_min, T_max]` is often ill-suited:
-predictive performance usually improves or stabilizes as trees are added, so
-hyperparameter optimization tends to push `n_estimators` toward `T_max`.
-Too small a `T_max` may be insufficient; too large a value wastes computation.
-The ensemble-size objective typically approaches a plateau rather than
-exhibiting a meaningful interior optimum, so TPE, random search, grid search,
-and Hyperband remain sensitive to the range you specify.
+A Random Forest does not give HPO a useful interior optimum in `n_estimators`.
+The score rises, then plateaus. Once you are on that plateau, a fixed-range
+optimizer is mostly choosing among nearly indistinguishable forests, so the
+answer becomes tied to the arbitrary `T_max` you typed in.
 
-**PLATEAU search** replaces this fixed-range search with adaptive ensemble-size
-selection. It evaluates out-of-bag (OOB) scores at geometrically spaced tree
-counts and adapts the search using their **relative score changes** and a
-specified **relative tolerance** ε (`delta` in the API).
+Set `T_max` too low and the forest may be insufficient. Set it too high and
+you pay for trees that no longer move the score.
 
-Rather than defining the "optimal number of trees" as the best value inside an
-arbitrary hyperparameter range, PLATEAU uses tolerance-based adaptive search:
-it seeks an ensemble-size region where substantially more trees yield only
-tolerance-level score changes.
+**PLATEAU does not search for the best tree count inside a range. It searches
+for the plateau itself.** It evaluates out-of-bag (OOB) scores at geometrically
+spaced tree counts and moves the triplet using their **relative score changes**
+and a **relative tolerance** ε (`delta` in the API).
+
+Instead of asking “which tree count wins inside my guessed range?”, PLATEAU asks
+“when are more trees no longer worth it?”
 
 ---
+
+## Papers---
 
 ## Papers
 
@@ -139,9 +140,9 @@ which is why PLATEAU runs inside the HPO loop rather than before it.
 ### Can too many trees make a Random Forest overfit?
 
 Adding trees mainly reduces variance and does not drive the usual
-overfitting-with-capacity behaviour, so the score typically improves and then
-flattens. The cost of an oversized forest is computational: training time,
-memory, and inference latency. That is the cost PLATEAU is designed to avoid.
+overfitting-with-capacity behaviour, so the score rises and then flattens.
+**More trees are usually not the problem. Paying for trees that no longer move
+the score is.** The bill shows up in training time, memory, and inference latency.
 
 ### What range should I give Optuna for `n_estimators`?
 
@@ -208,8 +209,8 @@ The Python package **`rf_plateau_hpo`** contains:
     using `n_estimators` as the resource.
 - `rf_plateau_hpo.datasets` — a declarative dataset registry
   (`data/datasets.yml`) and a local-first dataset loader.
-- `notebooks/` — experiment orchestration, analysis helpers, and the full
-  paper-reproducibility notebook.
+- `notebooks/` — the two-minute quickstart, experiment orchestration and
+  analysis helpers, and the full paper-reproducibility notebook.
 
 ---
 
@@ -237,7 +238,7 @@ Python 3.8+ is supported.
 
 ---
 
-## Quickstart: loading data as `(X, y)`
+## Loading repository datasets as `(X, y)`
 
 ```python
 from pathlib import Path
@@ -355,7 +356,25 @@ print("Best n_estimators:", best_n_hb)
 
 ## Notebooks and experiment scripts
 
-The main reproducibility notebook is
+Start with **[`notebooks/quickstart.ipynb`](notebooks/quickstart.ipynb)** — a
+self-contained, roughly two-minute tutorial on scikit-learn's Breast Cancer
+dataset. You can also
+[open it directly in Colab](https://colab.research.google.com/github/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb).
+
+It:
+
+- plots the OOB curve as it rises and then flattens into noise;
+- runs the same fixed-range TPE tuning with two different `T_max` values;
+- runs PLATEAU without a sampled `n_estimators` range;
+- visualizes the triplet walk across optimization trials;
+- compares final forest size and the total number of trees grown while tuning.
+
+**In the reference run used to build the tutorial:** fixed-range TPE on
+`[100, 2565]` selects 688 trees at OOB AUC 0.9909; PLATEAU selects 30 at
+0.9899 and grows about **12× fewer trees** while tuning. That is one dataset
+and one seed — the paper contains the benchmark.
+
+For full reproducibility, see
 [`notebooks/paper_repro.ipynb`](notebooks/paper_repro.ipynb). It contains the
 end-to-end workflow used for the IEEE Access paper:
 

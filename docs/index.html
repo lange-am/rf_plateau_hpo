@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How Many Trees in a Random Forest? Adaptive n_estimators Tuning with Plateau Search and Optuna</title>
-<meta name="description" content="How many trees does a Random Forest need? PLATEAU search finds a near-minimal sufficient n_estimators from out-of-bag scores while Optuna tunes the remaining hyperparameters. Open-source Python code for the IEEE Access 2026 paper.">
+<meta name="description" content="Stop guessing the n_estimators range. PLATEAU search finds where Random Forest performance plateaus while Optuna tunes the remaining hyperparameters. Python package and IEEE Access 2026 paper.">
 <link rel="canonical" href="https://lange-am.github.io/rf_plateau_hpo/">
 <meta name="author" content="Andrey M. Lange">
 <meta name="citation_title" content="How Many Trees in a Random Forest? A Revisited Approach With Plateau Search and Optuna Integration">
@@ -21,7 +21,7 @@
 <meta name="citation_pdf_url" content="https://arxiv.org/pdf/2606.03549">
 <meta property="og:type" content="article">
 <meta property="og:title" content="How Many Trees in a Random Forest? Adaptive n_estimators Tuning with Plateau Search and Optuna">
-<meta property="og:description" content="PLATEAU search finds a near-minimal sufficient number of trees from out-of-bag scores while Optuna/TPE tunes the remaining Random Forest hyperparameters.">
+<meta property="og:description" content="Stop guessing the n_estimators range. PLATEAU finds where Random Forest performance plateaus while Optuna/TPE tunes the rest.">
 <meta property="og:url" content="https://lange-am.github.io/rf_plateau_hpo/">
 <meta name="twitter:card" content="summary">
 <style>
@@ -54,41 +54,61 @@
 <main>
 
 <h1>How Many Trees in a Random Forest?</h1>
-<p class="lede">Adaptive <code>n_estimators</code> tuning with triplet-based PLATEAU search and Optuna — the open-source implementation accompanying the IEEE&nbsp;Access&nbsp;2026 paper.</p>
+<p class="lede"><strong>Stop guessing the <code>n_estimators</code> range.</strong> PLATEAU finds where Random Forest performance flattens while Optuna tunes the rest — the open-source implementation accompanying the IEEE&nbsp;Access&nbsp;2026 paper.</p>
 
 <p class="badges">
+  <a href="https://github.com/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">Quickstart (2 min)</a>
+  <a href="https://pypi.org/project/rf-plateau-hpo/">PyPI</a>
   <a href="https://github.com/lange-am/rf_plateau_hpo">Code on GitHub</a>
   <a href="https://doi.org/10.1109/ACCESS.2026.3705574">Paper (IEEE Access)</a>
   <a href="https://arxiv.org/abs/2606.03549">Preprint (arXiv)</a>
   <a href="https://arxiv.org/abs/2606.30837">Theory (arXiv)</a>
 </p>
 
-<h2>The problem with tuning <code>n_estimators</code> over a range</h2>
+<h2>Stop guessing the <code>n_estimators</code> range</h2>
 <p>
-  Predictive performance of a Random Forest usually improves or stabilizes as trees are added.
-  The ensemble-size objective typically approaches a plateau rather than exhibiting a meaningful
-  interior optimum, so grid search, random search, TPE and Hyperband remain sensitive to the
-  range you specify. Too small a bound may be insufficient; too large a bound wastes computation.
+  A Random Forest does not give HPO a useful interior optimum in the number of trees.
+  The score rises, then plateaus. Once you are on that plateau, a fixed-range search is
+  mostly choosing among nearly indistinguishable forests, so the reported tree count
+  becomes tied to the upper bound you typed in.
+</p>
+<p>
+  Set the bound too low and the forest may be insufficient. Set it too high and you pay
+  for trees that no longer move the score.
 </p>
 
-<h2>What PLATEAU search does instead</h2>
+<h2>Search for the plateau, not the boundary</h2>
 <p>
-  PLATEAU search removes the number of trees from the sampled search space entirely. For a
-  current ensemble size <code>B</code> and scale factor <code>sf</code>, it evaluates the
-  approximately geometric triplet <code>B/sf</code>, <code>B</code>, <code>B*sf</code> and
-  compares out-of-bag (OOB) scores across it. Relative score changes decide whether the triplet
-  shifts left, stays, or shifts right; meanwhile Optuna/TPE tunes the remaining Random Forest
-  hyperparameters. The triplet settles around an ensemble size where substantially more trees
-  buy only tolerance-level score changes.
+  <strong>PLATEAU does not search for the best tree count inside a range. It searches
+  for the plateau itself.</strong> For a current ensemble size <code>B</code> and scale
+  factor <code>sf</code>, it evaluates the geometric triplet <code>B/sf</code>,
+  <code>B</code>, <code>B*sf</code>. Relative OOB score changes move that triplet left,
+  keep it in place, or move it right while Optuna/TPE tunes the remaining Random Forest
+  hyperparameters.
 </p>
 <p>
-  You specify a relative tolerance ε (<code>delta</code>) — the score change you are willing to
-  treat as negligible — instead of a range you cannot justify.
+  You choose a relative tolerance ε (<code>delta</code>) — the score change you are
+  willing to call negligible — instead of a <code>[T_min, T_max]</code> range you
+  cannot justify.
+</p>
+
+<h2>See it in two minutes</h2>
+<p>
+  The <a href="https://github.com/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">quickstart notebook</a>
+  uses the built-in Breast Cancer dataset to plot the OOB plateau, run the same TPE
+  search under two different upper bounds, and then watch the PLATEAU triplet walk.
+  <a href="https://colab.research.google.com/github/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">Open it in Colab</a>.
+</p>
+<p>
+  <strong>Reference tutorial run:</strong> TPE on <code>[100, 2565]</code> selects
+  688 trees at 0.9909 OOB AUC; PLATEAU selects 30 at 0.9899 and grows about
+  <strong>12× fewer trees</strong> while tuning. One dataset, one seed — the paper
+  contains the benchmark.
 </p>
 
 <h2>Install and run</h2>
-<pre><code>pip install -e ".[dev]"</code></pre>
-<pre><code>from rf_plateau_hpo.core import tune_rf_oob_plateau
+<pre><code>pip install rf-plateau-hpo</code></pre>
+<pre><code>from rf_plateau_hpo import tune_rf_oob_plateau
 from sklearn.datasets import load_breast_cancer
 from sklearn.metrics import roc_auc_score
 
@@ -122,9 +142,9 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
 
 <h3>Can too many trees make a Random Forest overfit?</h3>
 <p>
-  Adding trees mainly reduces variance rather than increasing capacity, so the score typically
-  improves and then flattens. The cost of an oversized forest is computational: training time,
-  memory, and inference latency.
+  Adding trees mainly reduces variance rather than increasing capacity, so the score rises and
+  then flattens. <strong>More trees are usually not the problem. Paying for trees that no longer
+  move the score is.</strong> The bill shows up in training time, memory, and inference latency.
 </p>
 
 <h3>What range should I give Optuna for <code>n_estimators</code>?</h3>
@@ -167,7 +187,7 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
 </p>
 
 <footer>
-  Code released under the MIT License · <a href="https://github.com/lange-am/rf_plateau_hpo">github.com/lange-am/rf_plateau_hpo</a>
+  Code released under the MIT License · <a href="https://pypi.org/project/rf-plateau-hpo/">PyPI</a> · <a href="https://github.com/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">Quickstart</a> · <a href="https://github.com/lange-am/rf_plateau_hpo">GitHub</a>
 </footer>
 
 </main>
@@ -200,7 +220,10 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
       "@type": "SoftwareSourceCode",
       "name": "rf-plateau-hpo",
       "description": "Adaptive n_estimators tuning for Random Forest: triplet-based OOB plateau search integrated with Optuna/TPE.",
+      "url": "https://lange-am.github.io/rf_plateau_hpo/",
       "codeRepository": "https://github.com/lange-am/rf_plateau_hpo",
+      "downloadUrl": "https://pypi.org/project/rf-plateau-hpo/",
+      "sameAs": ["https://github.com/lange-am/rf_plateau_hpo", "https://pypi.org/project/rf-plateau-hpo/"],
       "programmingLanguage": "Python",
       "author": { "@type": "Person", "name": "Andrey M. Lange", "identifier": "https://orcid.org/0000-0001-6624-4794" },
       "version": "0.1.1",
