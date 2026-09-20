@@ -1,0 +1,66 @@
+name: publish quickstart to Kaggle
+
+# Keeps the Kaggle copy of the quickstart notebook in step with the repository.
+# Runs on demand, and whenever the notebook or its Kaggle metadata changes on main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "notebooks/quickstart.ipynb"
+      - ".kaggle/kernel-metadata.json"
+      - ".github/workflows/publish-kaggle.yml"
+  workflow_dispatch:
+
+jobs:
+  push:
+    name: kaggle kernels push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the Kaggle CLI
+        run: python -m pip install --upgrade kaggle
+
+      - name: Assemble the upload folder
+        run: |
+          mkdir -p build/kaggle
+          cp .kaggle/kernel-metadata.json build/kaggle/
+          cp notebooks/quickstart.ipynb build/kaggle/
+
+          # The repository copy documents a local install; the Kaggle copy has to
+          # install from PyPI, so swap that one cell before uploading.
+          python - <<'PY'
+          import json
+          import pathlib
+
+          p = pathlib.Path("build/kaggle/quickstart.ipynb")
+          nb = json.loads(p.read_text(encoding="utf-8"))
+          swapped = False
+          for c in nb["cells"]:
+              if c["cell_type"] == "code" and any("pip install" in line for line in c["source"]):
+                  c["source"] = ["!pip install -q rf-plateau-hpo\n"]
+                  c["execution_count"] = None
+                  c["outputs"] = []
+                  swapped = True
+                  break
+          if not swapped:
+              raise SystemExit("no install cell found - check notebooks/quickstart.ipynb")
+          p.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+          print("install cell rewritten for Kaggle")
+          PY
+
+      - name: Push to Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: kaggle kernels push -p build/kaggle
