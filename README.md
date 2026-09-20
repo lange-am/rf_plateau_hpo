@@ -57,8 +57,6 @@ Instead of asking “which tree count wins inside my guessed range?”, PLATEAU 
 
 ---
 
-## Papers---
-
 ## Papers
 
 ### 1. PLATEAU search, Optuna integration, and experiments
