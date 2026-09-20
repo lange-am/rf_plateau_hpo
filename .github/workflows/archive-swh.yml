@@ -24,9 +24,9 @@ jobs:
         id: request
         run: |
           set -euo pipefail
-          origin="https://github.com/\${GITHUB_REPOSITORY}"
+          origin="https://github.com/${GITHUB_REPOSITORY}"
           response=$(curl -fsS -X POST \
-            "https://archive.softwareheritage.org/api/1/origin/save/git/url/\${origin}/")
+            "https://archive.softwareheritage.org/api/1/origin/save/git/url/${origin}/")
           echo "$response"
           printf '%s' "$response" > response.json
 
@@ -53,15 +53,15 @@ jobs:
       - name: Wait for the snapshot
         run: |
           set -euo pipefail
-          id="\${{ steps.request.outputs.request_id }}"
+          id="${{ steps.request.outputs.request_id }}"
 
           for attempt in $(seq 1 20); do
             sleep 15
             body=$(curl -fsS \
-              "https://archive.softwareheritage.org/api/1/origin/save/\${id}/")
+              "https://archive.softwareheritage.org/api/1/origin/save/${id}/")
             status=$(printf '%s' "$body" | python -c \
               "import json,sys; print(json.load(sys.stdin)['save_task_status'])")
-            echo "attempt \${attempt}: \${status}"
+            echo "attempt ${attempt}: ${status}"
 
             case "$status" in
               succeeded)
