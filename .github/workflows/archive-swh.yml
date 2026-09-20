@@ -1,0 +1,84 @@
+name: archive in Software Heritage
+
+# Software Heritage archives by taking a new snapshot of the repository; earlier
+# snapshots stay unchanged, so each release remains permanently retrievable at
+# the state that Software Heritage archived for that visit.
+#
+# Releases only. The archive is meant to capture published states, and Save Code
+# Now should be used in moderation. Ordinary history stays on GitHub, which
+# Software Heritage also crawls on its own schedule.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  archive:
+    name: save code now
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Request an archival snapshot
+        id: request
+        run: |
+          set -euo pipefail
+          origin="https://github.com/\${GITHUB_REPOSITORY}"
+          response=$(curl -fsS -X POST \
+            "https://archive.softwareheritage.org/api/1/origin/save/git/url/\${origin}/")
+          echo "$response"
+          printf '%s' "$response" > response.json
+
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          with open("response.json", encoding="utf-8") as fh:
+              r = json.load(fh)
+
+          status = r.get("save_request_status")
+          print(f"request {r.get('id')}: {status} / {r.get('save_task_status')}")
+
+          if status != "accepted":
+              sys.exit(f"Software Heritage did not accept the request: {r}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"request_id={r['id']}\n")
+          PY
+
+      # Snapshot creation is asynchronous. Poll for a few minutes so a genuine
+      # archival failure is visible in Actions rather than discovered later.
+      - name: Wait for the snapshot
+        run: |
+          set -euo pipefail
+          id="\${{ steps.request.outputs.request_id }}"
+
+          for attempt in $(seq 1 20); do
+            sleep 15
+            body=$(curl -fsS \
+              "https://archive.softwareheritage.org/api/1/origin/save/\${id}/")
+            status=$(printf '%s' "$body" | python -c \
+              "import json,sys; print(json.load(sys.stdin)['save_task_status'])")
+            echo "attempt \${attempt}: \${status}"
+
+            case "$status" in
+              succeeded)
+                printf '%s' "$body" | python -c \
+                  "import json,sys; print('snapshot:', json.load(sys.stdin).get('snapshot_swhid'))"
+                exit 0
+                ;;
+              failed)
+                printf '%s' "$body" | python -c "
+          import json, sys
+          r = json.load(sys.stdin)
+          print('failed:', (r.get('metadata') or {}).get('error', r.get('note', 'no reason given')))
+          "
+                echo "Software Heritage reported a failed save task; rerun this workflow later."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "still pending after five minutes; Software Heritage may finish asynchronously"
