@@ -70,12 +70,24 @@ jobs:
                 exit 0
                 ;;
               failed)
-                printf '%s' "$body" | python -c "
+                error=$(printf '%s' "$body" | python -c "
           import json, sys
           r = json.load(sys.stdin)
-          print('failed:', (r.get('metadata') or {}).get('error', r.get('note', 'no reason given')))
-          "
-                echo "Software Heritage reported a failed save task; rerun this workflow later."
+          print((r.get('metadata') or {}).get('error', r.get('note', 'no reason given')))
+          ")
+                echo "failed: ${error}"
+
+                # GitHub can temporarily rate-limit Software Heritage while it
+                # clones the repository. That is an external transient failure,
+                # not a problem with this release, so do not turn the release
+                # pipeline red. A later manual run (or the next release) can
+                # request a fresh snapshot.
+                if [[ "$error" == *"429"* || "$error" == *"rate limit"* ]]; then
+                  echo "::warning::Software Heritage was rate-limited by GitHub; the snapshot was not updated. Rerun this workflow later."
+                  exit 0
+                fi
+
+                echo "Software Heritage reported a non-transient failed save task."
                 exit 1
                 ;;
             esac
