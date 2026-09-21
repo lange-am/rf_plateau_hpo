@@ -2,6 +2,7 @@
 
 [![tests](https://github.com/lange-am/rf_plateau_hpo/actions/workflows/ci.yml/badge.svg)](https://github.com/lange-am/rf_plateau_hpo/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/rf-plateau-hpo.svg)](https://pypi.org/project/rf-plateau-hpo/)
+[![Conda-forge](https://img.shields.io/conda/vn/conda-forge/rf-plateau-hpo.svg)](https://anaconda.org/conda-forge/rf-plateau-hpo)
 [![Kaggle](https://img.shields.io/badge/Kaggle-Notebook-20BEFF.svg?logo=kaggle&logoColor=white)](https://www.kaggle.com/code/alange/how-many-trees-does-a-random-forest-need)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![arXiv (method)](https://img.shields.io/badge/arXiv-2606.03549-b31b1b.svg)](https://arxiv.org/abs/2606.03549)
@@ -12,7 +13,7 @@
 [![SWH](https://archive.softwareheritage.org/badge/origin/https://github.com/lange-am/rf_plateau_hpo/)](https://archive.softwareheritage.org/browse/origin/https://github.com/lange-am/rf_plateau_hpo/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-🚀 **[Quickstart notebook](notebooks/quickstart.ipynb)** · [Kaggle](https://www.kaggle.com/code/alange/how-many-trees-does-a-random-forest-need) · 📄 [Project page](https://lange-am.github.io/rf_plateau_hpo/) · [Paper](https://doi.org/10.1109/ACCESS.2026.3705574) · [Preprint](https://arxiv.org/abs/2606.03549)
+🚀 **[Quickstart notebook](notebooks/quickstart.ipynb)** · [Kaggle](https://www.kaggle.com/code/alange/how-many-trees-does-a-random-forest-need) · [Conda-forge](https://anaconda.org/conda-forge/rf-plateau-hpo) · 📄 [Project page](https://lange-am.github.io/rf_plateau_hpo/) · [Paper](https://doi.org/10.1109/ACCESS.2026.3705574) · [Preprint](https://arxiv.org/abs/2606.03549)
 
 **How many trees should a Random Forest use?** Stop guessing a range for
 `n_estimators`. **PLATEAU search** moves along the tree-count axis until
@@ -219,6 +220,12 @@ For regular use, install the package from PyPI:
 
 ```bash
 pip install rf-plateau-hpo
+```
+
+or from conda-forge:
+
+```bash
+conda install -c conda-forge rf-plateau-hpo
 ```
 
 For development or to run the full notebook/reproducibility stack from a

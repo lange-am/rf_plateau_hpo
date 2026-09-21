@@ -59,6 +59,7 @@
 <p class="badges">
   <a href="https://github.com/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">Quickstart (2 min)</a>
   <a href="https://pypi.org/project/rf-plateau-hpo/">PyPI</a>
+  <a href="https://anaconda.org/conda-forge/rf-plateau-hpo">Conda-forge</a>
   <a href="https://github.com/lange-am/rf_plateau_hpo">Code on GitHub</a>
   <a href="https://doi.org/10.1109/ACCESS.2026.3705574">Paper (IEEE Access)</a>
   <a href="https://arxiv.org/abs/2606.03549">Preprint (arXiv)</a>
@@ -108,6 +109,8 @@
 
 <h2>Install and run</h2>
 <pre><code>pip install rf-plateau-hpo</code></pre>
+<p>or with conda-forge:</p>
+<pre><code>conda install -c conda-forge rf-plateau-hpo</code></pre>
 <pre><code>from rf_plateau_hpo import tune_rf_oob_plateau
 from sklearn.datasets import load_breast_cancer
 from sklearn.metrics import roc_auc_score
@@ -187,7 +190,7 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
 </p>
 
 <footer>
-  Code released under the MIT License · <a href="https://pypi.org/project/rf-plateau-hpo/">PyPI</a> · <a href="https://github.com/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">Quickstart</a> · <a href="https://github.com/lange-am/rf_plateau_hpo">GitHub</a>
+  Code released under the MIT License · <a href="https://pypi.org/project/rf-plateau-hpo/">PyPI</a> · <a href="https://anaconda.org/conda-forge/rf-plateau-hpo">Conda-forge</a> · <a href="https://github.com/lange-am/rf_plateau_hpo/blob/main/notebooks/quickstart.ipynb">Quickstart</a> · <a href="https://github.com/lange-am/rf_plateau_hpo">GitHub</a>
 </footer>
 
 </main>
@@ -223,10 +226,10 @@ print(best_n_estimators)   # near-minimal sufficient number of trees</code></pre
       "url": "https://lange-am.github.io/rf_plateau_hpo/",
       "codeRepository": "https://github.com/lange-am/rf_plateau_hpo",
       "downloadUrl": "https://pypi.org/project/rf-plateau-hpo/",
-      "sameAs": ["https://github.com/lange-am/rf_plateau_hpo", "https://pypi.org/project/rf-plateau-hpo/"],
+      "sameAs": ["https://github.com/lange-am/rf_plateau_hpo", "https://pypi.org/project/rf-plateau-hpo/", "https://anaconda.org/conda-forge/rf-plateau-hpo", "https://github.com/conda-forge/rf-plateau-hpo-feedstock"],
       "programmingLanguage": "Python",
       "author": { "@type": "Person", "name": "Andrey M. Lange", "identifier": "https://orcid.org/0000-0001-6624-4794" },
-      "version": "0.1.1",
+      "version": "0.1.2",
       "identifier": "https://doi.org/10.5281/zenodo.22847391",
       "license": "https://opensource.org/licenses/MIT",
       "citation": "https://doi.org/10.1109/ACCESS.2026.3705574"

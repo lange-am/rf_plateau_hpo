@@ -1,14 +1,10 @@
-# conda-forge submission
+# conda-forge packaging
 
-This directory contains the v1 conda-forge recipe for `rf-plateau-hpo`.
+`rf-plateau-hpo` is published through conda-forge.
 
-The standard conda-forge publication path is external to this repository:
+- Package: https://anaconda.org/conda-forge/rf-plateau-hpo
+- Canonical feedstock: https://github.com/conda-forge/rf-plateau-hpo-feedstock
 
-1. Fork `conda-forge/staged-recipes`.
-2. Copy `recipe.yaml` to `recipes/rf-plateau-hpo/recipe.yaml` in that fork.
-3. Open a pull request against `conda-forge/staged-recipes:main`.
-4. After review and merge, conda-forge creates the `rf-plateau-hpo-feedstock`
-   repository and its CI publishes the package to the `conda-forge` channel.
-
-Future releases are then handled through the feedstock and conda-forge's update
-automation rather than by uploading conda packages directly from this repository.
+The initial recipe was submitted through `conda-forge/staged-recipes` and is
+now maintained in the feedstock. Future conda-forge recipe updates should be
+made there rather than in this repository.
